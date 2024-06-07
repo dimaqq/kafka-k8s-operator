@@ -57,18 +57,6 @@ class K8sManager:
 
         raise Exception("NodePort not found.")
 
-    # TODO: fix this thing
-    @property
-    def node_ip_ports(self) -> list[str]:
-        ip_types = ["ExternalIP", "InternalIP", "Hostname"]
-        node_ip = ""
-
-        for addresses in self.node.status.addresses:
-            if addresses.type in ip_types:
-                node_ip = addresses.address
-
-        return f"{node_ip}:{self.node_port}"
-
     @property
     def nodeport_service(self) -> None:
         service = Service(
@@ -77,6 +65,11 @@ class K8sManager:
                 namespace=self.state.model.name,
             ),
             spec=ServiceSpec(
+                externalTrafficPolicy="Local",
+                type="NodePort",
+                selector={
+                    "app.kubernetes.io/name": self.state.unit_broker.unit.name.replace("/", "-")
+                },
                 ports=[
                     ServicePort(
                         name=f"{self.state.cluster.app.name}-port",
@@ -85,10 +78,6 @@ class K8sManager:
                         protocol="TCP",
                     )
                 ],
-                type="NodePort",
-                selector={
-                    "app.kubernetes.io/name": self.state.unit_broker.unit.name.replace("/", "-")
-                },
             ),
         )
 
