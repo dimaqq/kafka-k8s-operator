@@ -51,6 +51,7 @@ from literals import (
 )
 from managers.auth import AuthManager
 from managers.config import KafkaConfigManager
+from managers.k8s import K8sManager
 from managers.tls import TLSManager
 from workload import KafkaWorkload
 
@@ -85,6 +86,7 @@ class KafkaCharm(TypedCharmBase[CharmConfig]):
 
         # MANAGERS
 
+        self.k8s_manager = K8sManager(state=self.state, workload=self.workload)
         self.config_manager = KafkaConfigManager(
             state=self.state,
             workload=self.workload,
@@ -192,6 +194,8 @@ class KafkaCharm(TypedCharmBase[CharmConfig]):
         # start kafka service
         self.workload.start(layer=self._kafka_layer)
         logger.info("Kafka service started")
+
+        self.unit.set_ports(9093, 19093)
 
         # service_start might fail silently, confirm with ZK if kafka is actually connected
         self.on.update_status.emit()
@@ -377,7 +381,6 @@ class KafkaCharm(TypedCharmBase[CharmConfig]):
 
         getattr(logger, log_level.lower())(status.message)
         self.unit.status = status
-
 
 if __name__ == "__main__":
     main(KafkaCharm)
