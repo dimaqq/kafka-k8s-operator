@@ -11,19 +11,18 @@ from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v0.loki_push_api import LogProxyConsumer
 from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
 from charms.rolling_ops.v0.rollingops import RollingOpsManager
-from ops import (
-    ActiveStatus,
-    EventBase,
-    InstallEvent,
+from ops import ActiveStatus, InstallEvent, pebble
+from ops.charm import (
+    RelationDepartedEvent,
     SecretChangedEvent,
     StartEvent,
-    StatusBase,
     StorageAttachedEvent,
     StorageDetachingEvent,
     UpdateStatusEvent,
-    pebble,
 )
+from ops.framework import EventBase
 from ops.main import main
+from ops.model import StatusBase
 from ops.pebble import Layer
 
 from core.cluster import ClusterState
@@ -122,6 +121,7 @@ class KafkaCharm(TypedCharmBase[CharmConfig]):
         self.framework.observe(getattr(self.on, "secret_changed"), self._on_secret_changed)
 
         self.framework.observe(self.on[PEER].relation_changed, self._on_config_changed)
+        self.framework.observe(self.on[PEER].relation_departed, self._on_peer_relation_departed)
 
         self.framework.observe(
             getattr(self.on, "data_storage_attached"), self._on_storage_attached
@@ -330,6 +330,13 @@ class KafkaCharm(TypedCharmBase[CharmConfig]):
             logger.info(f'Broker {self.unit.name.split("/")[1]} restarted')
         else:
             logger.error(f"Broker {self.unit.name.split('/')[1]} failed to restart")
+
+    def _on_peer_relation_departed(self, event: RelationDepartedEvent) -> None:
+        """Handler for `peer-relation-departed` events."""
+        if not event.departing_unit == self.unit:
+            return
+
+        self.config_manager.k8s.delete_external_service()
 
     @property
     def healthy(self) -> bool:
