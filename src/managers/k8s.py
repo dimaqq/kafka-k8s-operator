@@ -2,11 +2,11 @@ import logging
 from functools import cached_property
 
 from lightkube.core.client import Client
+from lightkube.core.exceptions import ApiError
 from lightkube.core.resource import NamespacedResource
 from lightkube.models.core_v1 import ServicePort, ServiceSpec
 from lightkube.models.meta_v1 import ObjectMeta
 from lightkube.resources.core_v1 import Node, Pod, Service
-from lightkube.core.exceptions import ApiError
 
 from core.cluster import ClusterState
 
@@ -14,6 +14,8 @@ logger = logging.getLogger(__name__)
 
 class K8sManager:
     """Object for managing K8s patches."""
+    PORT_MINIMUM = 30000
+    KAFKA_PORT_OFFSET = 1000
 
     def __init__(self, state: ClusterState):
         self.state = state
@@ -58,18 +60,12 @@ class K8sManager:
             logger.warning(e)
             return
 
-    def get_node_port(self, svc_port: int) -> int:
-        if not self.service or not self.service.spec.type == "NodePort":
-            return 0
+    @property
+    def node_port(self) -> int:
+        return self.PORT_MINIMUM + self.KAFKA_PORT_OFFSET + self.state.unit_broker.unit_id
 
-        for node_port in self.service.spec.ports:
-            if node_port.port == svc_port:
-                return node_port.nodePort
-
-        raise Exception("NodePort not found")
-
-    def get_nodeport_service(self, svc_port: int) -> Service:
-        return Service(
+    def patch_external_service(self, svc_port: int) -> None:
+        service = Service(
             metadata=ObjectMeta(
                 name=self.state.unit_broker.unit.name.replace("/", "-"),
                 namespace=self.state.model.name,
@@ -85,12 +81,11 @@ class K8sManager:
                         protocol="TCP",
                         port=svc_port,
                         targetPort=svc_port,
+                        nodePort=self.node_port,
                         name=f"{self.state.cluster.app.name}-port",
-                        nodePort=30011
-                    )
+                    ),
                 ],
             ),
         )
 
-    def patch_external_service(self, service: Service) -> None:
         self.client.apply(service)

@@ -97,7 +97,8 @@ class Listener:
     def listener(self) -> str:
         """Return `name://:port`."""
         if self.scope == "EXTERNAL" and self.k8s_manager:
-            return f"{self.name}://0.0.0.0:9092"
+            # TODO: check if can use 0.0.0.0 by default
+            return f"{self.name}://0.0.0.0:{self.port}"
 
         return f"{self.name}://:{self.port}"
 
@@ -105,7 +106,7 @@ class Listener:
     def advertised_listener(self) -> str:
         """Return `name://host:port`."""
         if self.scope == "EXTERNAL" and self.k8s_manager:
-            return f"{self.name}://{self.k8s_manager.node_ip}:30011"
+            return f"{self.name}://{self.k8s_manager.node_ip}:{self.k8s_manager.node_port}"
 
         return f"{self.name}://{self.host}:{self.port}"
 
@@ -275,9 +276,7 @@ class KafkaConfigManager:
             f'listener.name.{self.internal_listener.name.lower()}.scram-sha-512.sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username="{username}" password="{password}";'
         ]
         client_scram = [
-            auth.name
-            for auth in (self.external_listeners)
-            if auth.protocol.startswith("SASL_")
+            auth.name for auth in (self.external_listeners) if auth.protocol.startswith("SASL_")
         ]
         for name in client_scram:
             scram_properties.append(
@@ -329,7 +328,7 @@ class KafkaConfigManager:
     def external_listeners(self) -> list[Listener]:
         """Return a list of extra listeners."""
         # TODO: if not self.charm.config[expose]: [] or something
-        l = (
+        return (
             [
                 Listener(protocol=auth, scope="EXTERNAL", k8s_manager=self.k8s_manager)
                 for auth in self.auth_mechanisms
@@ -337,8 +336,6 @@ class KafkaConfigManager:
             if self.k8s_manager.service
             else []
         )
-        logger.info(l)
-        return l
 
     @property
     def all_listeners(self) -> list[Listener]:

@@ -175,9 +175,7 @@ class KafkaCharm(TypedCharmBase[CharmConfig]):
             return
 
         self.k8s_manager.patch_external_service(
-            service=self.k8s_manager.get_nodeport_service(
-                svc_port=SECURITY_PROTOCOL_PORTS[self.config_manager.security_protocol].client
-            )
+            svc_port=SECURITY_PROTOCOL_PORTS[self.config_manager.security_protocol].client
         )
 
         # required settings given zookeeper connection config has been created
