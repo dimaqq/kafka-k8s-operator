@@ -48,13 +48,13 @@ class Listener:
         self,
         protocol: AuthMechanism,
         scope: Scope,
-        k8s_manager: K8sManager | None = None,
+        k8s: K8sManager | None = None,
         host: str = "",
     ):
         self.protocol: AuthMechanism = protocol
         self.host = host
         self.scope = scope
-        self.k8s_manager = k8s_manager
+        self.k8s = k8s
 
     @property
     def scope(self) -> Scope:
@@ -96,7 +96,7 @@ class Listener:
     @property
     def listener(self) -> str:
         """Return `name://:port`."""
-        if self.scope == "EXTERNAL" and self.k8s_manager:
+        if self.scope == "EXTERNAL" and self.k8s:
             # TODO: check if can use 0.0.0.0 by default
             return f"{self.name}://0.0.0.0:{self.port}"
 
@@ -105,8 +105,8 @@ class Listener:
     @property
     def advertised_listener(self) -> str:
         """Return `name://host:port`."""
-        if self.scope == "EXTERNAL" and self.k8s_manager:
-            return f"{self.name}://{self.k8s_manager.node_ip}:{self.k8s_manager.node_port}"
+        if self.scope == "EXTERNAL" and self.k8s:
+            return f"{self.name}://{self.k8s.node_ip}:{self.k8s.node_port}"
 
         return f"{self.name}://{self.host}:{self.port}"
 
@@ -125,7 +125,7 @@ class KafkaConfigManager:
         self.workload = workload
         self.config = config
         self.current_version = current_version
-        self.k8s_manager = K8sManager(state=self.state)
+        self.k8s = K8sManager(state=self.state)
 
     @property
     def log_level(self) -> str:
@@ -330,10 +330,10 @@ class KafkaConfigManager:
         # TODO: if not self.charm.config[expose]: [] or something
         return (
             [
-                Listener(protocol=auth, scope="EXTERNAL", k8s_manager=self.k8s_manager)
+                Listener(protocol=auth, scope="EXTERNAL", k8s=self.k8s)
                 for auth in self.auth_mechanisms
             ]
-            if self.k8s_manager.service
+            if self.k8s.service
             else []
         )
 

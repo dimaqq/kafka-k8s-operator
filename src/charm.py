@@ -52,7 +52,6 @@ from literals import (
 )
 from managers.auth import AuthManager
 from managers.config import KafkaConfigManager
-from managers.k8s import K8sManager
 from managers.tls import TLSManager
 from workload import KafkaWorkload
 
@@ -93,7 +92,6 @@ class KafkaCharm(TypedCharmBase[CharmConfig]):
             config=self.config,
             current_version=self.upgrade.current_version,
         )
-        self.k8s_manager = K8sManager(state=self.state)
         self.tls_manager = TLSManager(
             state=self.state, workload=self.workload, substrate=self.substrate
         )
@@ -174,7 +172,7 @@ class KafkaCharm(TypedCharmBase[CharmConfig]):
             event.defer()
             return
 
-        self.k8s_manager.patch_external_service(
+        self.config_manager.k8s.create_nodeport_service(
             svc_port=SECURITY_PROTOCOL_PORTS[self.config_manager.security_protocol].client
         )
 
