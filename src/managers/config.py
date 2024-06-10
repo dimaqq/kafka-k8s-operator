@@ -20,6 +20,7 @@ from literals import (
     AuthMechanism,
     Scope,
 )
+from managers.k8s import K8sManager
 
 logger = logging.getLogger(__name__)
 
@@ -43,10 +44,17 @@ class Listener:
         scope: scope of the listener, CLIENT or INTERNAL
     """
 
-    def __init__(self, host: str, protocol: AuthMechanism, scope: Scope):
+    def __init__(
+        self,
+        protocol: AuthMechanism,
+        scope: Scope,
+        k8s_manager: K8sManager | None = None,
+        host: str = "",
+    ):
         self.protocol: AuthMechanism = protocol
         self.host = host
         self.scope = scope
+        self.k8s_manager = k8s_manager
 
     @property
     def scope(self) -> Scope:
@@ -56,8 +64,8 @@ class Listener:
     @scope.setter
     def scope(self, value):
         """Internal scope validator."""
-        if value not in ["CLIENT", "INTERNAL"]:
-            raise ValueError("Only CLIENT and INTERNAL scopes are accepted")
+        if value not in ["CLIENT", "INTERNAL", "EXTERNAL"]:
+            raise ValueError("Only CLIENT, INTERNAL and EXTERNAL scopes are accepted")
 
         self._scope = value
 
@@ -70,10 +78,10 @@ class Listener:
         Returns:
             Integer of port number
         """
-        if self.scope == "CLIENT":
-            return SECURITY_PROTOCOL_PORTS[self.protocol].client
+        if self.scope == "INTERNAL":
+            return SECURITY_PROTOCOL_PORTS[self.protocol].internal
 
-        return SECURITY_PROTOCOL_PORTS[self.protocol].internal
+        return SECURITY_PROTOCOL_PORTS[self.protocol].client
 
     @property
     def name(self) -> str:
@@ -88,11 +96,17 @@ class Listener:
     @property
     def listener(self) -> str:
         """Return `name://:port`."""
+        if self.scope == "EXTERNAL" and self.k8s_manager:
+            return f"{self.name}://0.0.0.0:9092"
+
         return f"{self.name}://:{self.port}"
 
     @property
     def advertised_listener(self) -> str:
         """Return `name://host:port`."""
+        if self.scope == "EXTERNAL" and self.k8s_manager:
+            return f"{self.name}://{self.k8s_manager.node_ip}:30011"
+
         return f"{self.name}://{self.host}:{self.port}"
 
 
@@ -110,6 +124,7 @@ class KafkaConfigManager:
         self.workload = workload
         self.config = config
         self.current_version = current_version
+        self.k8s_manager = K8sManager(state=self.state)
 
     @property
     def log_level(self) -> str:
@@ -260,7 +275,9 @@ class KafkaConfigManager:
             f'listener.name.{self.internal_listener.name.lower()}.scram-sha-512.sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username="{username}" password="{password}";'
         ]
         client_scram = [
-            auth.name for auth in self.client_listeners if auth.protocol.startswith("SASL_")
+            auth.name
+            for auth in (self.external_listeners)
+            if auth.protocol.startswith("SASL_")
         ]
         for name in client_scram:
             scram_properties.append(
@@ -309,9 +326,24 @@ class KafkaConfigManager:
         ]
 
     @property
+    def external_listeners(self) -> list[Listener]:
+        """Return a list of extra listeners."""
+        # TODO: if not self.charm.config[expose]: [] or something
+        l = (
+            [
+                Listener(protocol=auth, scope="EXTERNAL", k8s_manager=self.k8s_manager)
+                for auth in self.auth_mechanisms
+            ]
+            if self.k8s_manager.service
+            else []
+        )
+        logger.info(l)
+        return l
+
+    @property
     def all_listeners(self) -> list[Listener]:
         """Return a list with all expected listeners."""
-        return [self.internal_listener] + self.client_listeners
+        return [self.internal_listener] + self.external_listeners
 
     @property
     def inter_broker_protocol_version(self) -> str:

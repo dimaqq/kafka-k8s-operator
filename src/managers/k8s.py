@@ -1,3 +1,4 @@
+import logging
 from functools import cached_property
 
 from lightkube.core.client import Client
@@ -5,22 +6,21 @@ from lightkube.core.resource import NamespacedResource
 from lightkube.models.core_v1 import ServicePort, ServiceSpec
 from lightkube.models.meta_v1 import ObjectMeta
 from lightkube.resources.core_v1 import Node, Pod, Service
-from lightkube.types import PatchType
+from lightkube.core.exceptions import ApiError
 
 from core.cluster import ClusterState
-from core.workload import WorkloadBase
 
+logger = logging.getLogger(__name__)
 
 class K8sManager:
     """Object for managing K8s patches."""
 
-    def __init__(self, state: ClusterState, workload: WorkloadBase):
+    def __init__(self, state: ClusterState):
         self.state = state
-        self.workload = workload
 
     @cached_property
     def client(self) -> Client:
-        return Client()  # pyright: ignore[reportArgumentType]
+        return Client(field_manager=self.state.cluster.app.name)  # pyright: ignore[reportArgumentType]
 
     @property
     def pod(self) -> NamespacedResource:
@@ -39,54 +39,58 @@ class K8sManager:
         )
 
     @property
-    def service(self) -> NamespacedResource:
-        return self.client.get(
-            Service,
-            name=f"{self.state.cluster.app.name}-external",
-            namespace=self.state.model.name,
-        )
+    def node_ip(self) -> str:
+        for addresses in self.node.status.addresses:
+            if addresses.type in ["ExternalIP", "InternalIP", "Hostname"]:
+                return addresses.address
+
+        return ""
 
     @property
-    def node_port(self) -> int:
+    def service(self) -> NamespacedResource | None:
+        try:
+            return self.client.get(
+                Service,
+                name=self.state.unit_broker.unit.name.replace("/", "-"),
+                namespace=self.state.model.name,
+            )
+        except ApiError as e:  # in case the service hasn't been created yet
+            logger.warning(e)
+            return
+
+    def get_node_port(self, svc_port: int) -> int:
         if not self.service or not self.service.spec.type == "NodePort":
-            return -1
+            return 0
 
-        for svc_port in self.service.spec.ports:
-            if svc_port.port == 9093:
-                return svc_port.nodePort
+        for node_port in self.service.spec.ports:
+            if node_port.port == svc_port:
+                return node_port.nodePort
 
-        raise Exception("NodePort not found.")
+        raise Exception("NodePort not found")
 
-    @property
-    def nodeport_service(self) -> None:
-        service = Service(
+    def get_nodeport_service(self, svc_port: int) -> Service:
+        return Service(
             metadata=ObjectMeta(
-                name=self.state.cluster.app.name,
+                name=self.state.unit_broker.unit.name.replace("/", "-"),
                 namespace=self.state.model.name,
             ),
             spec=ServiceSpec(
                 externalTrafficPolicy="Local",
                 type="NodePort",
                 selector={
-                    "app.kubernetes.io/name": self.state.unit_broker.unit.name.replace("/", "-")
+                    "statefulset.kubernetes.io/pod-name": self.state.unit_broker.unit.name.replace("/", "-")
                 },
                 ports=[
                     ServicePort(
-                        name=f"{self.state.cluster.app.name}-port",
-                        port=9093,
-                        targetPort=9093,
                         protocol="TCP",
+                        port=svc_port,
+                        targetPort=svc_port,
+                        name=f"{self.state.cluster.app.name}-port",
+                        nodePort=30011
                     )
                 ],
             ),
         )
 
-        self.client.patch(
-            res=Service,
-            obj=service,
-            name=service.metadata.name,
-            namespace=service.metadata.namespace,
-            force=True,
-            field_manager=self.state.cluster.app.name,
-            patch_type=PatchType.MERGE,
-        )
+    def patch_external_service(self, service: Service) -> None:
+        self.client.apply(service)

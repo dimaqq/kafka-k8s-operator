@@ -43,6 +43,7 @@ from literals import (
     METRICS_RULES_DIR,
     PEER,
     REL_NAME,
+    SECURITY_PROTOCOL_PORTS,
     SUBSTRATE,
     USER,
     DebugLevel,
@@ -86,13 +87,13 @@ class KafkaCharm(TypedCharmBase[CharmConfig]):
 
         # MANAGERS
 
-        self.k8s_manager = K8sManager(state=self.state, workload=self.workload)
         self.config_manager = KafkaConfigManager(
             state=self.state,
             workload=self.workload,
             config=self.config,
             current_version=self.upgrade.current_version,
         )
+        self.k8s_manager = K8sManager(state=self.state)
         self.tls_manager = TLSManager(
             state=self.state, workload=self.workload, substrate=self.substrate
         )
@@ -173,6 +174,12 @@ class KafkaCharm(TypedCharmBase[CharmConfig]):
             event.defer()
             return
 
+        self.k8s_manager.patch_external_service(
+            service=self.k8s_manager.get_nodeport_service(
+                svc_port=SECURITY_PROTOCOL_PORTS[self.config_manager.security_protocol].client
+            )
+        )
+
         # required settings given zookeeper connection config has been created
         self.config_manager.set_server_properties()
         self.config_manager.set_zk_jaas_config()
@@ -194,8 +201,6 @@ class KafkaCharm(TypedCharmBase[CharmConfig]):
         # start kafka service
         self.workload.start(layer=self._kafka_layer)
         logger.info("Kafka service started")
-
-        self.unit.set_ports(9093, 19093)
 
         # service_start might fail silently, confirm with ZK if kafka is actually connected
         self.on.update_status.emit()
@@ -381,6 +386,7 @@ class KafkaCharm(TypedCharmBase[CharmConfig]):
 
         getattr(logger, log_level.lower())(status.message)
         self.unit.status = status
+
 
 if __name__ == "__main__":
     main(KafkaCharm)

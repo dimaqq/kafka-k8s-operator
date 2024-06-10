@@ -44,7 +44,7 @@ METRICS_RULES_DIR = "./src/alert_rules/prometheus"
 LOGS_RULES_DIR = "./src/alert_rules/loki"
 
 AuthMechanism = Literal["SASL_PLAINTEXT", "SASL_SSL", "SSL"]
-Scope = Literal["INTERNAL", "CLIENT"]
+Scope = Literal["INTERNAL", "CLIENT", "EXTERNAL"]
 DebugLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR"]
 DatabagScope = Literal["unit", "app"]
 Substrates = Literal["vm", "k8s"]
