@@ -92,6 +92,9 @@ class K8sManager:
         K8s-external requests hit <NODE-IP>:<NODE-PORT>, and are redirected to the corresponding
         statefulset.kubernetes.io/pod-name from the selector, and port from `svc_port`.
 
+        If a pod was rescheduled to a new node, the node-ip defined in the `advertised.listeners`
+        will be updated during the normal charm `config-changed` reconciliation.
+
         Args:
             svc_port: the port for the client service, as defined in the `listeners` server property
         """
