@@ -327,7 +327,10 @@ class TLSHandler(Object):
         """Builds a SAN dict of DNS names and IPs for the unit."""
         if self.charm.substrate == "vm":
             return {
-                "sans_ip": [self.charm.state.unit_broker.host],
+                "sans_ip": [
+                    self.charm.state.unit_broker.host,
+                    self.charm.config_manager.k8s.node_ip,
+                ],
                 "sans_dns": [self.model.unit.name, socket.getfqdn()] + self._extra_sans,
             }
         else:

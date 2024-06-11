@@ -38,7 +38,7 @@ jsonschema = ">=4.10"
 cryptography = ">42.0.0"
 pydantic ="^1.10.7"
 pyyaml = "^6.0.1"
-lightkube = "^0.15.0"
+lightkube = "^0"
 
 [tool.poetry.group.fmt]
 optional = true
@@ -54,7 +54,8 @@ optional = true
 black = "^22.3.0"
 ruff = ">=0.1.0"
 codespell = ">=2.2.2"
-pyright = "^1.1.318"
+lightkube = "^0"
+pyright = ">=1.1.366"
 
 [tool.poetry.group.unit]
 optional = true
