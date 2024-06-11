@@ -908,13 +908,13 @@ adal = ["adal (>=1.0.2)"]
 
 [[package]]
 name = "lightkube"
-version = "0.15.2"
+version = "0.15.0"
 description = "Lightweight kubernetes client library"
 optional = false
 python-versions = "*"
 files = [
-    {file = "lightkube-0.15.2-py3-none-any.whl", hash = "sha256:54c509f71d56f4977f70c2bc1fdf0c79e9898b55cec4f3cbc6051f8d9961a75b"},
-    {file = "lightkube-0.15.2.tar.gz", hash = "sha256:1297a3c6ebe873debf73cd584e288534a1f2fd643bbf8285dfbd76550c5076b0"},
+    {file = "lightkube-0.15.0-py3-none-any.whl", hash = "sha256:f86dca7d2421273376900f0457736417f3394546d56b2e58e5fdecc06dabfbec"},
+    {file = "lightkube-0.15.0.tar.gz", hash = "sha256:c02eba31da578d61aeed35bb65a151ebea854a42e0ade4086b4bf36c8d3f5d29"},
 ]
 
 [package.dependencies]
@@ -2319,4 +2319,4 @@ files = [
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.10"
-content-hash = "5ff2abe036fdb276a471f63846dda9ae3392d4bc760433aac72fa553d0641ea4"
+content-hash = "5ad516b59cd0d9fe9b864f7233d16f05c160bfd6005c43b5b203e8089ab2f287"

@@ -5,6 +5,7 @@
 """Manager for handling Kafka Kubernetes resources."""
 
 import logging
+from functools import cached_property
 
 from lightkube.config.kubeconfig import DEFAULT_KUBECONFIG, KubeConfig
 from lightkube.core.client import Client
@@ -27,6 +28,7 @@ class K8sManager:
     def __init__(self, state: ClusterState):
         self.state = state
 
+    @cached_property
     def client(self) -> Client:
         """The Lightkube client."""
         return Client(
@@ -46,8 +48,8 @@ class K8sManager:
     @property
     def node(self) -> Node:
         """The Node the current running unit is on."""
-        if not self.pod.spec:
-            raise Exception(f"No spec found for {self.pod}")
+        if not self.pod.spec or not self.pod.nodeName:
+            raise Exception("Could not find podSpec or nodeName")
 
         return self.client.get(
             Node,
@@ -126,7 +128,7 @@ class K8sManager:
         """The external NodePort Service created by the charm."""
         try:
             return self.client.get(
-                Service,
+                res=Service,
                 name=self.service_name,
             )
         except ApiError as e:
