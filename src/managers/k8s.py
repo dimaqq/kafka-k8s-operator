@@ -7,7 +7,6 @@
 import logging
 from functools import cached_property
 
-from lightkube.config.kubeconfig import DEFAULT_KUBECONFIG, KubeConfig
 from lightkube.core.client import Client
 from lightkube.core.exceptions import ApiError
 from lightkube.models.core_v1 import ServicePort, ServiceSpec
@@ -17,6 +16,9 @@ from lightkube.resources.core_v1 import Node, Pod, Service
 from core.cluster import ClusterState
 
 logger = logging.getLogger(__name__)
+
+# default logging from lightkube httpx requests is very noisy
+logging.getLogger("lightkube").setLevel(logging.WARN)
 
 
 class K8sManager:
@@ -31,10 +33,9 @@ class K8sManager:
     @cached_property
     def client(self) -> Client:
         """The Lightkube client."""
-        return Client(
+        return Client(  # pyright: ignore[reportArgumentType]
             field_manager=self.state.cluster.app.name,
             namespace=self.state.model.name,
-            config=KubeConfig.from_env(DEFAULT_KUBECONFIG),
         )
 
     @property
@@ -48,7 +49,7 @@ class K8sManager:
     @property
     def node(self) -> Node:
         """The Node the current running unit is on."""
-        if not self.pod.spec or not self.pod.nodeName:
+        if not self.pod.spec or not self.pod.spec.nodeName:
             raise Exception("Could not find podSpec or nodeName")
 
         return self.client.get(
