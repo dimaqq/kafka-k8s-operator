@@ -92,7 +92,7 @@ class KafkaCharm(TypedCharmBase[CharmConfig]):
             current_version=self.upgrade.current_version,
         )
         self.tls_manager = TLSManager(
-            state=self.state, workload=self.workload, substrate=self.substrate
+            state=self.state, workload=self.workload, substrate=self.substrate, config=self.config
         )
         self.auth_manager = AuthManager(
             state=self.state, workload=self.workload, kafka_opts=self.config_manager.kafka_opts

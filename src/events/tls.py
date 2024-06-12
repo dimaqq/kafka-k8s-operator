@@ -9,7 +9,6 @@ import json
 import logging
 import os
 import re
-import socket
 from typing import TYPE_CHECKING
 
 from charms.tls_certificates_interface.v1.tls_certificates import (
@@ -42,6 +41,7 @@ class TLSHandler(Object):
     def __init__(self, charm):
         super().__init__(charm, "tls")
         self.charm: "KafkaCharm" = charm
+        self.sans = self.charm.tls_manager.build_sans()
 
         self.certificates = TLSCertificatesRequiresV1(self.charm, TLS_RELATION)
 
@@ -160,8 +160,8 @@ class TLSHandler(Object):
                 add_unique_id_to_subject_name=bool(alias),
                 private_key=self.charm.state.unit_broker.private_key.encode("utf-8"),
                 subject=subject,
-                sans_ip=self._sans["sans_ip"],
-                sans_dns=self._sans["sans_dns"],
+                sans_ip=self.sans["sans_ip"],
+                sans_dns=self.sans["sans_dns"],
             )
             .decode()
             .strip()
@@ -283,8 +283,8 @@ class TLSHandler(Object):
         new_csr = generate_csr(
             private_key=self.charm.state.unit_broker.private_key.encode("utf-8"),
             subject=self.charm.state.unit_broker.relation_data.get("private-address", ""),
-            sans_ip=self._sans["sans_ip"],
-            sans_dns=self._sans["sans_dns"],
+            sans_ip=self.sans["sans_ip"],
+            sans_dns=self.sans["sans_dns"],
         )
 
         self.certificates.request_certificate_renewal(
@@ -315,49 +315,9 @@ class TLSHandler(Object):
         csr = generate_csr(
             private_key=self.charm.state.unit_broker.private_key.encode("utf-8"),
             subject=self.charm.state.unit_broker.relation_data.get("private-address", ""),
-            sans_ip=self._sans["sans_ip"],
-            sans_dns=self._sans["sans_dns"],
+            sans_ip=self.sans["sans_ip"],
+            sans_dns=self.sans["sans_dns"],
         )
         self.charm.state.unit_broker.update({"csr": csr.decode("utf-8").strip()})
 
         self.certificates.request_certificate_creation(certificate_signing_request=csr)
-
-    @property
-    def _sans(self) -> dict[str, list[str] | None]:
-        """Builds a SAN dict of DNS names and IPs for the unit."""
-        if self.charm.substrate == "vm":
-            return {
-                "sans_ip": [
-                    self.charm.state.unit_broker.host,
-                    self.charm.config_manager.k8s.node_ip,
-                ],
-                "sans_dns": [self.model.unit.name, socket.getfqdn()] + self._extra_sans,
-            }
-        else:
-            bind_address = ""
-            if self.charm.state.peer_relation:
-                if binding := self.charm.model.get_binding(self.charm.state.peer_relation):
-                    bind_address = binding.network.bind_address
-            return {
-                "sans_ip": [str(bind_address)],
-                "sans_dns": [
-                    self.charm.state.unit_broker.host.split(".")[0],
-                    self.charm.state.unit_broker.host,
-                    socket.getfqdn(),
-                ]
-                + self._extra_sans,
-            }
-
-    @property
-    def _extra_sans(self) -> list[str]:
-        """Parse the certificate_extra_sans config option."""
-        extra_sans = self.charm.config.certificate_extra_sans or ""
-        parsed_sans = []
-
-        if extra_sans == "":
-            return parsed_sans
-
-        for sans in extra_sans.split(","):
-            parsed_sans.append(sans.replace("{unit}", self.charm.unit.name.split("/")[1]))
-
-        return parsed_sans

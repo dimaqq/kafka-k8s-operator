@@ -5,9 +5,12 @@
 """Manager for handling Kafka TLS configuration."""
 
 import logging
+import socket
 import subprocess  # nosec B404
 
 from ops.pebble import ExecError
+from src.core.structured_config import CharmConfig
+from src.managers.k8s import K8sManager
 
 from core.cluster import ClusterState
 from core.workload import WorkloadBase
@@ -19,10 +22,17 @@ logger = logging.getLogger(__name__)
 class TLSManager:
     """Manager for building necessary files for Java TLS auth."""
 
-    def __init__(self, state: ClusterState, workload: WorkloadBase, substrate: Substrates):
+    def __init__(
+        self,
+        state: ClusterState,
+        workload: WorkloadBase,
+        substrate: Substrates,
+        config: CharmConfig,
+    ):
         self.state = state
         self.workload = workload
         self.substrate = substrate
+        self.config = config
 
         self.keytool = "charmed-kafka.keytool" if self.substrate == "vm" else "keytool"
 
@@ -110,6 +120,49 @@ class TLSManager:
             if e.stdout and "does not exist" in e.stdout:
                 logger.warning(e.stdout)
                 return
+            logger.error(e.stdout)
+            raise e
+
+    def build_sans(self) -> dict[str, list[str] | None]:
+        """Builds a SAN dict of DNS names and IPs for the unit."""
+        if self.substrate == "vm":
+            return {
+                "sans_ip": [
+                    self.state.unit_broker.host,
+                ],
+                "sans_dns": [self.state.unit_broker.unit.name, socket.getfqdn()]
+                + self.build_extra_sans(),
+            }
+        else:
+            return {
+                "sans_ip": [str(self.state.bind_address), K8sManager(state=self.state).node_ip],
+                "sans_dns": [
+                    self.state.unit_broker.host.split(".")[0],
+                    self.state.unit_broker.host,
+                    socket.getfqdn(),
+                ]
+                + self.build_extra_sans(),
+            }
+
+    def build_extra_sans(self) -> list[str]:
+        """Parse the certificate_extra_sans config option."""
+        extra_sans = self.config.certificate_extra_sans or ""
+        parsed_sans = []
+
+        if extra_sans == "":
+            return parsed_sans
+
+        for sans in extra_sans.split(","):
+            parsed_sans.append(sans.replace("{unit}", str(self.state.unit_broker.unit_id)))
+
+        return parsed_sans
+
+    def get_current_sans(self) -> None:
+        """Gets the current SANs for the unit cert."""
+        command = "openssl x509 -noout -ext subjectAltName -in server.pem"
+        try:
+            self.workload.exec(command=command, working_dir=self.workload.paths.conf_path)
+        except (subprocess.CalledProcessError, ExecError) as e:
             logger.error(e.stdout)
             raise e
 
