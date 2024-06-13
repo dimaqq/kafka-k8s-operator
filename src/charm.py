@@ -172,9 +172,10 @@ class KafkaCharm(TypedCharmBase[CharmConfig]):
             event.defer()
             return
 
-        self.config_manager.k8s.create_nodeport_service(
-            svc_port=SECURITY_PROTOCOL_PORTS[self.config_manager.security_protocol].client
-        )
+        if self.config.expose_nodeport:
+            self.config_manager.k8s.create_nodeport_service(
+                svc_port=SECURITY_PROTOCOL_PORTS[self.config_manager.security_protocol].client
+            )
 
         # required settings given zookeeper connection config has been created
         self.config_manager.set_server_properties()

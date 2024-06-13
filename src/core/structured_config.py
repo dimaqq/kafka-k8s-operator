@@ -72,6 +72,7 @@ class CharmConfig(BaseConfigModel):
     profile: str
     certificate_extra_sans: str | None
     log_level: str
+    expose_nodeport: bool
 
     @validator("*", pre=True)
     @classmethod
