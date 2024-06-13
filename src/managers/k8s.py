@@ -18,7 +18,9 @@ from core.cluster import ClusterState
 logger = logging.getLogger(__name__)
 
 # default logging from lightkube httpx requests is very noisy
-logging.getLogger("lightkube").setLevel(logging.WARN)
+logging.getLogger("lightkube").disabled = True
+logging.getLogger("lightkube.core.client").disabled = True
+logging.getLogger("httpx").disabled = True
 
 
 class K8sManager:

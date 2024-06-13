@@ -10,12 +10,12 @@ import subprocess
 from typing import TypedDict  # nosec B404
 
 from ops.pebble import ExecError
-from src.core.structured_config import CharmConfig
-from src.managers.k8s import K8sManager
 
 from core.cluster import ClusterState
+from core.structured_config import CharmConfig
 from core.workload import WorkloadBase
 from literals import GROUP, USER, Substrates
+from managers.k8s import K8sManager
 
 logger = logging.getLogger(__name__)
 
