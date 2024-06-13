@@ -248,7 +248,7 @@ class KafkaCharm(TypedCharmBase[CharmConfig]):
                     f"NEW SANs = {self.tls_manager.build_sans()}"
                 )
             )
-            self.tls._request_certificate()  # new cert will eventually be dynamically loaded by the broker
+            self.tls._request_certificate_renewal()  # new cert will eventually be dynamically loaded by the broker
             return  # early return here to ensure new node cert arrives before updating advertised.listeners
 
         if zk_jaas_changed:
