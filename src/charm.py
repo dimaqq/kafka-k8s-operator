@@ -5,6 +5,7 @@
 """Charmed Machine Operator for Apache Kafka."""
 
 import logging
+from datetime import datetime
 
 from charms.data_platform_libs.v0.data_models import TypedCharmBase
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
@@ -229,26 +230,34 @@ class KafkaCharm(TypedCharmBase[CharmConfig]):
         zk_jaas_changed = set(zk_jaas) ^ set(self.config_manager.zk_jaas_config.splitlines())
 
         current_sans = self.tls_manager.get_current_sans()
-        sans_changed = current_sans != self.tls_manager.build_sans()
 
         if not (properties and zk_jaas and current_sans):
             # Event fired before charm has properly started
             event.defer()
             return
 
+        current_sans_ip = set(current_sans["sans_ip"])
+        expected_sans_ip = set(self.tls_manager.build_sans()["sans_ip"])
+        sans_ip_changed = current_sans_ip ^ expected_sans_ip
+
         # update environment
         self.config_manager.set_environment()
         self.unit.set_workload_version(self.workload.get_version())
 
-        if sans_changed:
+        if sans_ip_changed:
             logger.info(
                 (
                     f'Broker {self.unit.name.split("/")[1]} updating certificate SANs - '
-                    f"OLD SANs = {current_sans}, "
-                    f"NEW SANs = {self.tls_manager.build_sans()}"
+                    f"OLD SANs = {current_sans_ip - expected_sans_ip}, "
+                    f"NEW SANs = {expected_sans_ip - current_sans_ip}"
                 )
             )
-            self.tls._request_certificate_renewal()  # new cert will eventually be dynamically loaded by the broker
+            self.tls.certificates.on.certificate_expiring.emit(
+                certificate=self.state.unit_broker.certificate, expiry=datetime.now().isoformat()
+            )  # new cert will eventually be dynamically loaded by the broker
+            self.state.unit_broker.update(
+                {"certificate": ""}
+            )  # ensures only single requested new certs, will be replaced on new certificate-available event
             return  # early return here to ensure new node cert arrives before updating advertised.listeners
 
         if zk_jaas_changed:
