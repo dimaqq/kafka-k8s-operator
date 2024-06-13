@@ -228,7 +228,10 @@ class KafkaCharm(TypedCharmBase[CharmConfig]):
         zk_jaas = self.workload.read(self.workload.paths.zk_jaas)
         zk_jaas_changed = set(zk_jaas) ^ set(self.config_manager.zk_jaas_config.splitlines())
 
-        if not properties or not zk_jaas:
+        current_sans = self.tls_manager.get_current_sans()
+        sans_changed = current_sans != self.tls_manager.build_sans()
+
+        if not (properties and zk_jaas and current_sans):
             # Event fired before charm has properly started
             event.defer()
             return
@@ -236,6 +239,17 @@ class KafkaCharm(TypedCharmBase[CharmConfig]):
         # update environment
         self.config_manager.set_environment()
         self.unit.set_workload_version(self.workload.get_version())
+
+        if sans_changed:
+            logger.info(
+                (
+                    f'Broker {self.unit.name.split("/")[1]} updating certificate SANs - '
+                    f"OLD SANs = {current_sans}, "
+                    f"NEW SANs = {self.tls_manager.build_sans()}"
+                )
+            )
+            self.tls._request_certificate()  # new cert will eventually be dynamically loaded by the broker
+            return  # early return here to ensure new node cert arrives before updating advertised.listeners
 
         if zk_jaas_changed:
             clean_broker_jaas = [conf.strip() for conf in zk_jaas]
