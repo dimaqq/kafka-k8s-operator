@@ -225,6 +225,15 @@ class CharmConfig(BaseConfigModel):
 
         return value
 
+    @validator("expose_nodeport")
+    @classmethod
+    def expose_nodeport_k8s_only(cls, value: str) -> str | None:
+        """Check expose-nodeport config option is only used on Kubernetes charm."""
+        if SUBSTRATE == "vm" and value:
+            raise ValueError("Value not permitted on VM charm")
+
+        return value
+
     @validator("log_level")
     @classmethod
     def log_level_values(cls, value: str) -> str | None:
