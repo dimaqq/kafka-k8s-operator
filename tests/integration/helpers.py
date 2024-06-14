@@ -466,6 +466,28 @@ def delete_pod(ops_test: OpsTest, unit_name: str):
     )
 
 
+def get_nodeport_services(ops_test: OpsTest, app_name: str = APP_NAME) -> list[list[str]]:
+    output = check_output(
+        f"kubectl get svc -n {ops_test.model_full_name} -o wide | grep {app_name} | grep NodePort",
+        stderr=PIPE,
+        shell=True,
+        universal_newlines=True,
+    )
+
+    return [line.split() for line in output.splitlines()]
+
+
+def get_node_ip(ops_test: OpsTest) -> str:
+    output = check_output(
+        f"kubectl get nodes -n {ops_test.model_full_name} -o wide",
+        stderr=PIPE,
+        shell=True,
+        universal_newlines=True,
+    )
+
+    return output.splitlines()[1].split()[5]
+
+
 def get_unit_address_map(ops_test: OpsTest, app_name: str = APP_NAME) -> dict[str, str]:
     """Returns map on unit name and host.
 
