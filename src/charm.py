@@ -14,7 +14,7 @@ from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
 from charms.rolling_ops.v0.rollingops import RollingOpsManager
 from ops import ActiveStatus, InstallEvent, pebble
 from ops.charm import (
-    RelationDepartedEvent,
+    # RelationDepartedEvent,
     SecretChangedEvent,
     StartEvent,
     StorageAttachedEvent,
@@ -122,7 +122,7 @@ class KafkaCharm(TypedCharmBase[CharmConfig]):
         self.framework.observe(getattr(self.on, "secret_changed"), self._on_secret_changed)
 
         self.framework.observe(self.on[PEER].relation_changed, self._on_config_changed)
-        self.framework.observe(self.on[PEER].relation_departed, self._on_peer_relation_departed)
+        # self.framework.observe(self.on[PEER].relation_departed, self._on_peer_relation_departed)
 
         self.framework.observe(
             getattr(self.on, "data_storage_attached"), self._on_storage_attached
@@ -358,12 +358,12 @@ class KafkaCharm(TypedCharmBase[CharmConfig]):
         else:
             logger.error(f"Broker {self.unit.name.split('/')[1]} failed to restart")
 
-    def _on_peer_relation_departed(self, event: RelationDepartedEvent) -> None:
-        """Handler for `peer-relation-departed` events."""
-        if not event.departing_unit == self.unit:
-            return
-
-        self.config_manager.k8s.delete_external_service()
+    # def _on_peer_relation_departed(self, event: RelationDepartedEvent) -> None:
+    #     """Handler for `peer-relation-departed` events."""
+    #     if not event.departing_unit == self.unit:
+    #         return
+    #
+    #     self.k8s_manager.delete_external_service()
 
     @property
     def healthy(self) -> bool:

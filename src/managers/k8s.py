@@ -10,10 +10,11 @@ from functools import cached_property
 from lightkube.core.client import Client
 from lightkube.core.exceptions import ApiError
 from lightkube.models.core_v1 import ServicePort, ServiceSpec
-from lightkube.models.meta_v1 import ObjectMeta
+from lightkube.models.meta_v1 import ObjectMeta, OwnerReference
 from lightkube.resources.core_v1 import Node, Pod, Service
 
 from core.cluster import ClusterState
+from literals import SECURITY_PROTOCOL_PORTS, AuthMechanism
 
 logger = logging.getLogger(__name__)
 
@@ -93,10 +94,22 @@ class K8sManager:
         Args:
             svc_port: the port for the client service, as defined in the `listeners` server property
         """
+        if not self.pod.metadata:
+            raise Exception("Could not find pod metadata")
+
+        svc_port = SECURITY_PROTOCOL_PORTS[self.auth_mechanism].external
+
         service = Service(
             metadata=ObjectMeta(
                 name=self.service_name,
                 namespace=self.state.model.name,
+                ownerRefereces=OwnerReference(
+                    apiVersion=self.pod.metadata.apiVerison,
+                    kind=self.pod.kind,
+                    name=self.pod_name,
+                    uid=self.pod.metadata.uid,
+                    blockOwnerDeletion=False,
+                ),
             ),
             spec=ServiceSpec(
                 externalTrafficPolicy="Local",
@@ -114,7 +127,7 @@ class K8sManager:
             ),
         )
 
-        self.client.apply(service)
+        self.client.apply(service)  # pyright: ignore[reportAttributeAccessIssue]
 
     @property
     def service(self) -> Service | None:
@@ -130,6 +143,7 @@ class K8sManager:
             logger.warning(e)
             return
 
-    def delete_external_service(self) -> None:
-        """Deletes the NodePort service for the current running unit."""
-        self.client.delete(res=Service, name=self.service_name, namespace=self.state.model.name)
+    # TODO: check this actually deletes after pod removed
+    # def delete_external_services(self) -> None:
+    #     """Deletes the NodePort services for the current running unit for when it is shutting down."""
+    #     self.client.delete(res=Service, name=self.service_name, namespace=self.state.model.name, cascade=CascadeType.FOREGROUND)
