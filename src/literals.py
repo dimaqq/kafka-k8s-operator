@@ -72,12 +72,13 @@ class Ports:
 
     client: int
     internal: int
+    external: int
 
 
 SECURITY_PROTOCOL_PORTS: Dict[AuthMechanism, Ports] = {
-    "SASL_PLAINTEXT": Ports(9092, 19092),
-    "SASL_SSL": Ports(9093, 19093),
-    "SSL": Ports(9094, 19094),
+    "SASL_PLAINTEXT": Ports(9092, 19092, 29092),
+    "SASL_SSL": Ports(9093, 19093, 29093),
+    "SSL": Ports(9094, 19094, 29094),
 }
 
 

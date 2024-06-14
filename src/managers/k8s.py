@@ -77,16 +77,6 @@ class K8sManager:
         """The name for the NodePort service."""
         return self.state.unit_broker.unit.name.replace("/", "-")
 
-    @property
-    def node_port(self) -> int:
-        """The nodePort to assign for the current running unit.
-
-        Kafka listeners need to have unique ports, and NodePorts must be between 30000 and 32767.
-        It is also helpful for ports to be unique, so as to support multiple brokers on the same node.
-        NodePorts also must be between 30000 and 32767.
-        """
-        return self.PORT_MINIMUM + self.KAFKA_PORT_OFFSET + self.state.unit_broker.unit_id
-
     def create_nodeport_service(self, svc_port: int) -> None:
         """Creates a NodePort service for external access to the current running unit.
 
@@ -117,7 +107,7 @@ class K8sManager:
                         protocol="TCP",
                         port=svc_port,
                         targetPort=svc_port,
-                        nodePort=self.node_port,
+                        nodePort=self.state.unit_broker.node_port,
                         name=f"{self.state.cluster.app.name}-port",
                     ),
                 ],

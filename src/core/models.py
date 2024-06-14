@@ -133,6 +133,9 @@ class KafkaCluster(RelationState):
 class KafkaBroker(RelationState):
     """State collection metadata for a unit."""
 
+    PORT_MINIMUM = 30000
+    KAFKA_PORT_OFFSET = 1000  # in future, we may have more than one exposed app, add offsets
+
     def __init__(
         self,
         relation: Relation | None,
@@ -153,15 +156,26 @@ class KafkaBroker(RelationState):
         return int(self.unit.name.split("/")[1])
 
     @property
-    def host(self) -> str:
-        """Return the hostname of a unit."""
-        host = ""
+    def internal_address(self) -> str:
+        """The address for internal communication between brokers."""
+        addr = ""
         if self.substrate == "vm":
             for key in ["hostname", "ip", "private-address"]:
-                if host := self.relation_data.get(key, ""):
+                if addr := self.relation_data.get(key, ""):
                     break
+
         if self.substrate == "k8s":
-            host = f"{self.unit.name.split('/')[0]}-{self.unit_id}.{self.unit.name.split('/')[0]}-endpoints"
+            addr = f"{self.unit.name.split('/')[0]}-{self.unit_id}.{self.unit.name.split('/')[0]}-endpoints"
+
+        return addr
+
+    @property
+    def host(self) -> str:
+        """Return the hostname of a unit."""
+        host = self.internal_address
+
+        if self.substrate == "k8s":
+            host = self.node_ip
 
         return host
 
@@ -227,6 +241,31 @@ class KafkaBroker(RelationState):
             None if password not yet generated
         """
         return self.relation_data.get("truststore-password", "")
+
+    @property
+    def node_ip(self) -> str:
+        """The IP of the Kubernetes node the unit is on.
+
+        K8s-only.
+
+        Returns:
+            String of IPV4/IPV6 IP address for the node the unit is on
+            None if the broker cluster is not exposed
+        """
+        return self.relation_data.get("node-ip", "")
+
+    @property
+    def node_port(self) -> int:
+        """The nodePort to assign for the current running unit.
+
+        Kafka listeners need to have unique ports, and NodePorts must be between 30000 and 32767.
+        It is also helpful for ports to be unique, so as to support multiple brokers on the same node.
+        NodePorts also must be between 30000 and 32767.
+
+        Returns:
+            Integer of nodePort number
+        """
+        return self.PORT_MINIMUM + self.KAFKA_PORT_OFFSET + self.unit_id
 
 
 class ZooKeeper(RelationState):

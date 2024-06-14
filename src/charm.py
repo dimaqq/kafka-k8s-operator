@@ -173,6 +173,9 @@ class KafkaCharm(TypedCharmBase[CharmConfig]):
             event.defer()
             return
 
+        # persist node-ip, and trigger relation-changed if necessary on other units
+        self.state.unit_broker.update({"node-ip": self.config_manager.k8s.node_ip})
+
         if self.config.expose_nodeport:
             self.config_manager.k8s.create_nodeport_service(
                 svc_port=SECURITY_PROTOCOL_PORTS[self.config_manager.security_protocol].client

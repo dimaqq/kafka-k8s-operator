@@ -45,16 +45,12 @@ class Listener:
     """
 
     def __init__(
-        self,
-        protocol: AuthMechanism,
-        scope: Scope,
-        k8s: K8sManager | None = None,
-        host: str = "",
+        self, protocol: AuthMechanism, scope: Scope, host: str = "", node_port: int | None = None
     ):
         self.protocol: AuthMechanism = protocol
         self.host = host
         self.scope = scope
-        self.k8s = k8s
+        self.node_port = node_port
 
     @property
     def scope(self) -> Scope:
@@ -78,10 +74,7 @@ class Listener:
         Returns:
             Integer of port number
         """
-        if self.scope == "INTERNAL":
-            return SECURITY_PROTOCOL_PORTS[self.protocol].internal
-
-        return SECURITY_PROTOCOL_PORTS[self.protocol].client
+        return getattr(SECURITY_PROTOCOL_PORTS[self.protocol], self.scope.lower())
 
     @property
     def name(self) -> str:
@@ -96,17 +89,13 @@ class Listener:
     @property
     def listener(self) -> str:
         """Return `name://:port`."""
-        if self.scope == "EXTERNAL" and self.k8s:
-            # TODO: check if can use 0.0.0.0 by default
-            return f"{self.name}://0.0.0.0:{self.port}"
-
-        return f"{self.name}://:{self.port}"
+        return f"{self.name}://0.0.0.0:{self.port}"
 
     @property
     def advertised_listener(self) -> str:
         """Return `name://host:port`."""
-        if self.scope == "EXTERNAL" and self.k8s:
-            return f"{self.name}://{self.k8s.node_ip}:{self.k8s.node_port}"
+        if self.scope == "EXTERNAL":
+            return f"{self.name}://{self.host}:{self.node_port}"
 
         return f"{self.name}://{self.host}:{self.port}"
 
@@ -310,7 +299,9 @@ class KafkaConfigManager:
     def internal_listener(self) -> Listener:
         """Return the internal listener."""
         protocol = self.security_protocol
-        return Listener(host=self.state.unit_broker.host, protocol=protocol, scope="INTERNAL")
+        return Listener(
+            host=self.state.unit_broker.internal_address, protocol=protocol, scope="INTERNAL"
+        )
 
     @property
     def client_listeners(self) -> list[Listener]:
@@ -320,17 +311,21 @@ class KafkaConfigManager:
             return []
 
         return [
-            Listener(host=self.state.unit_broker.host, protocol=auth, scope="CLIENT")
+            Listener(host=self.state.unit_broker.internal_address, protocol=auth, scope="CLIENT")
             for auth in self.auth_mechanisms
         ]
 
     @property
     def external_listeners(self) -> list[Listener]:
         """Return a list of extra listeners."""
-        # TODO: if not self.charm.config[expose]: [] or something
         return (
             [
-                Listener(protocol=auth, scope="EXTERNAL", k8s=self.k8s)
+                Listener(
+                    protocol=auth,
+                    scope="EXTERNAL",
+                    host=self.state.unit_broker.host,
+                    node_port=self.state.unit_broker.node_port,
+                )
                 for auth in self.auth_mechanisms
             ]
             if self.k8s.service
@@ -340,7 +335,7 @@ class KafkaConfigManager:
     @property
     def all_listeners(self) -> list[Listener]:
         """Return a list with all expected listeners."""
-        return [self.internal_listener] + self.external_listeners
+        return [self.internal_listener] + self.client_listeners + self.external_listeners
 
     @property
     def inter_broker_protocol_version(self) -> str:
