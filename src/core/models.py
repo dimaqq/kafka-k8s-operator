@@ -172,12 +172,7 @@ class KafkaBroker(RelationState):
     @property
     def host(self) -> str:
         """Return the hostname of a unit."""
-        host = self.internal_address
-
-        if self.substrate == "k8s":
-            host = self.node_ip
-
-        return host
+        return self.node_ip or self.internal_address  # node_ip will be empty on  VM charms
 
     # --- TLS ---
 

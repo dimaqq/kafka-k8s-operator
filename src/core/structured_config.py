@@ -10,6 +10,8 @@ from enum import Enum
 from charms.data_platform_libs.v0.data_models import BaseConfigModel
 from pydantic import validator
 
+from literals import SUBSTRATE
+
 logger = logging.getLogger(__name__)
 
 

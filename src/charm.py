@@ -25,7 +25,6 @@ from ops.framework import EventBase
 from ops.main import main
 from ops.model import StatusBase
 from ops.pebble import Layer
-from managers.k8s import K8sManager
 
 from core.cluster import ClusterState
 from core.structured_config import CharmConfig
@@ -52,6 +51,7 @@ from literals import (
 )
 from managers.auth import AuthManager
 from managers.config import KafkaConfigManager
+from managers.k8s import K8sManager
 from managers.tls import TLSManager
 from workload import KafkaWorkload
 
@@ -68,7 +68,7 @@ class KafkaCharm(TypedCharmBase[CharmConfig]):
         self.name = CHARM_KEY
         self.substrate: Substrates = SUBSTRATE
         self.workload = KafkaWorkload(container=self.unit.get_container(CONTAINER))
-        self.state = ClusterState(self, substrate=self.substrate)
+        self.state = ClusterState(self, substrate=self.substrate, config=self.config)
 
         # HANDLERS
 
@@ -180,7 +180,7 @@ class KafkaCharm(TypedCharmBase[CharmConfig]):
 
         if self.config.expose_nodeport:
             for auth_mechanism in self.config_manager.auth_mechanisms:
-                self.k8s_manager.auth_mechanism = auth_mechanism
+                self.k8s_manager.security_protocol = auth_mechanism
                 self.k8s_manager.create_nodeport_service()
 
         # required settings given zookeeper connection config has been created

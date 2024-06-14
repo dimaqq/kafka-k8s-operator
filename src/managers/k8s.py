@@ -14,6 +14,7 @@ from lightkube.models.meta_v1 import ObjectMeta, OwnerReference
 from lightkube.resources.core_v1 import Node, Pod, Service
 
 from core.cluster import ClusterState
+from core.models import KafkaBroker
 from literals import SECURITY_PROTOCOL_PORTS, AuthMechanism
 
 logger = logging.getLogger(__name__)
@@ -27,9 +28,15 @@ logging.getLogger("httpx").disabled = True
 class K8sManager:
     """Manager for handling Kafka Kubernetes resources."""
 
-    def __init__(self, state: ClusterState, auth_mechanism: AuthMechanism = "SASL_PLAINTEXT"):
+    def __init__(
+        self,
+        state: ClusterState,
+        security_protocol: AuthMechanism = "SASL_PLAINTEXT",
+        broker: KafkaBroker | None = None,
+    ):
         self.state = state
-        self._auth_mechanism: AuthMechanism = auth_mechanism
+        self._security_protocol: AuthMechanism = security_protocol
+        self._broker = broker or self.state.unit_broker
 
     @cached_property
     def client(self) -> Client:
@@ -40,14 +47,24 @@ class K8sManager:
         )
 
     @property
-    def auth_mechanism(self) -> AuthMechanism:
-        """The auth mechanism for the service."""
-        return self._auth_mechanism
+    def broker(self) -> KafkaBroker:
+        """The KafkaBroker to manage."""
+        return self._broker
 
-    @auth_mechanism.setter
-    def auth_mechanism(self, value: AuthMechanism) -> None:
-        """Internal auth_mechanism setter."""
-        self._auth_mechanism = value
+    @broker.setter
+    def broker(self, value: KafkaBroker) -> None:
+        """The KafkaBroker to manager setter."""
+        self._broker = value
+
+    @property
+    def security_protocol(self) -> AuthMechanism:
+        """The proposed security protocol for the service."""
+        return self._security_protocol
+
+    @security_protocol.setter
+    def security_protocol(self, value: AuthMechanism) -> None:
+        """Internal security_protocol setter."""
+        self._security_protocol = value
 
     @property
     def pod(self) -> Pod:
@@ -89,21 +106,31 @@ class K8sManager:
     @property
     def service_name(self) -> str:
         """Builds the service name for a given auth mechanism."""
-        return f"{self.pod_name}-{self.auth_mechanism.lower()}"
+        return f"{self.pod_name}-{self.security_protocol.lower().replace('_','-')}"
 
     @property
     def node_port(self) -> int:
         """Builds the complete nodePort for the current unit."""
-        return self.state.unit_broker.base_node_port + self.get_auth_mechanism_port_offset(
-            self.auth_mechanism
+        return self.state.unit_broker.base_node_port + self.get_security_protocol_port_offset(
+            self.security_protocol
         )
 
     @staticmethod
-    def get_auth_mechanism_port_offset(auth_mechanism: AuthMechanism) -> int:
+    def get_security_protocol_port_offset(security_protocol: AuthMechanism) -> int:
         """The port offset for different auth mechanisms."""
         # NOTE - this limits us to 99 brokers and 9 auth mechanisms, which is probably fine for now
         # we can revisit this later if needed
-        return list(SECURITY_PROTOCOL_PORTS.keys()).index(auth_mechanism)
+        return list(SECURITY_PROTOCOL_PORTS.keys()).index(security_protocol)
+
+    @property
+    def external_bootstrap_servers(self) -> str:
+        """Comma-delimited string of `bootstrap-server` for external access."""
+        bootstrap_server = []
+        for broker in self.state.brokers:
+            self.broker = broker
+            bootstrap_server.append(f"{self.node_ip}:{self.node_port}")
+
+        return ",".join(sorted(bootstrap_server))
 
     def create_nodeport_service(self) -> None:
         """Creates a NodePort service for external access to the current running unit.
@@ -128,7 +155,7 @@ class K8sManager:
         if not self.pod.metadata:
             raise Exception("Could not find pod metadata")
 
-        svc_port = SECURITY_PROTOCOL_PORTS[self.auth_mechanism].external
+        svc_port = SECURITY_PROTOCOL_PORTS[self.security_protocol].external
 
         service = Service(
             metadata=ObjectMeta(

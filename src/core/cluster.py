@@ -19,6 +19,7 @@ from ops import Framework, Object, Relation
 from ops.model import Unit
 
 from core.models import KafkaBroker, KafkaClient, KafkaCluster, ZooKeeper
+from core.structured_config import CharmConfig
 from literals import (
     INTERNAL_USERS,
     PEER,
@@ -26,17 +27,20 @@ from literals import (
     SECRETS_UNIT,
     SECURITY_PROTOCOL_PORTS,
     ZK,
+    AuthMechanism,
     Status,
     Substrates,
 )
+from managers.k8s import K8sManager
 
 
 class ClusterState(Object):
     """Collection of global cluster state for the Kafka services."""
 
-    def __init__(self, charm: Framework | Object, substrate: Substrates):
+    def __init__(self, charm: Framework | Object, substrate: Substrates, config: CharmConfig):
         super().__init__(parent=charm, key="charm_state")
         self.substrate: Substrates = substrate
+        self.config = config
 
         self.peer_app_interface = DataPeerData(self.model, relation_name=PEER)
         self.peer_unit_interface = DataPeerUnitData(
@@ -189,12 +193,12 @@ class ClusterState(Object):
         return ";".join(super_users_arg)
 
     @property
-    def port(self) -> int:
-        """Return the port to be used internally."""
+    def security_protocol(self) -> AuthMechanism:
+        """The current enabled :class:`AuthMechanism` for bootstrap."""
         return (
-            SECURITY_PROTOCOL_PORTS["SASL_SSL"].client
-            if (self.cluster.tls_enabled and self.unit_broker.certificate)
-            else SECURITY_PROTOCOL_PORTS["SASL_PLAINTEXT"].client
+            "SASL_SSL"
+            if self.cluster.tls_enabled and self.unit_broker.certificate
+            else "SASL_PLAINTEXT"
         )
 
     @property
@@ -207,7 +211,19 @@ class ClusterState(Object):
         if not self.peer_relation:
             return ""
 
-        return ",".join(sorted([f"{broker.host}:{self.port}" for broker in self.brokers]))
+        if self.config.expose_nodeport:  # implicitly checks for k8s in structured_config
+            return K8sManager(
+                state=self, security_protocol=self.security_protocol
+            ).external_bootstrap_servers
+
+        return ",".join(
+            sorted(
+                [
+                    f"{broker.internal_address}:{SECURITY_PROTOCOL_PORTS[self.security_protocol]}"
+                    for broker in self.brokers
+                ]
+            )
+        )
 
     @property
     def log_dirs(self) -> str:

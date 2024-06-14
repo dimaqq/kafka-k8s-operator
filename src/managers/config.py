@@ -276,21 +276,11 @@ class KafkaConfigManager:
         return scram_properties
 
     @property
-    def security_protocol(self) -> AuthMechanism:
-        """Infers current charm security.protocol based on current relations."""
-        # FIXME: When we have multiple auth_mechanims/listeners, remove this method
-        return (
-            "SASL_SSL"
-            if (self.state.cluster.tls_enabled and self.state.unit_broker.certificate)
-            else "SASL_PLAINTEXT"
-        )
-
-    @property
     def auth_mechanisms(self) -> list[AuthMechanism]:
         """Return a list of enabled auth mechanisms."""
         # TODO: At the moment only one mechanism for extra listeners. Will need to be
         # extended with more depending on configuration settings.
-        protocol = [self.security_protocol]
+        protocol = [self.state.security_protocol]
         if self.state.cluster.mtls_enabled:
             protocol += ["SSL"]
 
@@ -299,7 +289,7 @@ class KafkaConfigManager:
     @property
     def internal_listener(self) -> Listener:
         """Return the internal listener."""
-        protocol = self.security_protocol
+        protocol = self.state.security_protocol
         return Listener(
             host=self.state.unit_broker.internal_address, protocol=protocol, scope="INTERNAL"
         )
@@ -321,7 +311,7 @@ class KafkaConfigManager:
         """Return a list of extra listeners."""
         listeners = []
         for auth_mechanism in self.auth_mechanisms:
-            k8s = K8sManager(state=self.state, auth_mechanism=auth_mechanism)
+            k8s = K8sManager(state=self.state, security_protocol=auth_mechanism)
             if not k8s.service:
                 continue
 
@@ -378,7 +368,7 @@ class KafkaConfigManager:
         client_properties = [
             f'sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username="{username}" password="{password}";',
             "sasl.mechanism=SCRAM-SHA-512",
-            f"security.protocol={self.security_protocol}",
+            f"security.protocol={self.state.security_protocol}",
             # FIXME: security.protocol will need changing once multiple listener auth schemes
             f"bootstrap.servers={self.state.bootstrap_server}",
         ]

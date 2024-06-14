@@ -156,8 +156,8 @@ class TLSManager:
                 ),
                 "sans_dns": sorted(
                     [
-                        self.state.unit_broker.host.split(".")[0],
-                        self.state.unit_broker.host,
+                        self.state.unit_broker.internal_address.split(".")[0],
+                        self.state.unit_broker.internal_address,
                         socket.getfqdn(),
                     ]
                     + self._build_extra_sans()
