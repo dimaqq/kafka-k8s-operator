@@ -134,13 +134,15 @@ class K8sManager:
             metadata=ObjectMeta(
                 name=self.service_name,
                 namespace=self.state.model.name,
-                ownerRefereces=OwnerReference(
-                    apiVersion=self.pod.metadata.apiVerison,
-                    kind=self.pod.kind,
-                    name=self.pod_name,
-                    uid=self.pod.metadata.uid,
-                    blockOwnerDeletion=False,
-                ),
+                ownerReferences=[
+                    OwnerReference(
+                        apiVersion=self.pod.apiVersion,
+                        kind=self.pod.kind,
+                        name=self.pod_name,
+                        uid=self.pod.metadata.uid,
+                        blockOwnerDeletion=False,
+                    )
+                ],
             ),
             spec=ServiceSpec(
                 externalTrafficPolicy="Local",
@@ -152,7 +154,7 @@ class K8sManager:
                         port=svc_port,
                         targetPort=svc_port,
                         nodePort=self.node_port,
-                        name=f"{self.state.cluster.app.name}-{self.auth_mechanism.lower()}-port",
+                        name=f"{self.service_name}-port",
                     ),
                 ],
             ),
@@ -173,8 +175,3 @@ class K8sManager:
             # as it doesn't exist yet to `kubectl get`
             logger.warning(e)
             return
-
-    # TODO: check this actually deletes after pod removed
-    # def delete_external_services(self) -> None:
-    #     """Deletes the NodePort services for the current running unit for when it is shutting down."""
-    #     self.client.delete(res=Service, name=self.service_name, namespace=self.state.model.name, cascade=CascadeType.FOREGROUND)
