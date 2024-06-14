@@ -27,11 +27,9 @@ logging.getLogger("httpx").disabled = True
 class K8sManager:
     """Manager for handling Kafka Kubernetes resources."""
 
-    PORT_MINIMUM = 30000
-    KAFKA_PORT_OFFSET = 1000  # in future, we may have more than one service, add offsets
-
-    def __init__(self, state: ClusterState):
+    def __init__(self, state: ClusterState, auth_mechanism: AuthMechanism = "SASL_PLAINTEXT"):
         self.state = state
+        self._auth_mechanism: AuthMechanism = auth_mechanism
 
     @cached_property
     def client(self) -> Client:
@@ -40,6 +38,16 @@ class K8sManager:
             field_manager=self.state.cluster.app.name,
             namespace=self.state.model.name,
         )
+
+    @property
+    def auth_mechanism(self) -> AuthMechanism:
+        """The auth mechanism for the service."""
+        return self._auth_mechanism
+
+    @auth_mechanism.setter
+    def auth_mechanism(self, value: AuthMechanism) -> None:
+        """Internal auth_mechanism setter."""
+        self._auth_mechanism = value
 
     @property
     def pod(self) -> Pod:
@@ -74,11 +82,30 @@ class K8sManager:
         return ""
 
     @property
-    def service_name(self) -> str:
-        """The name for the NodePort service."""
+    def pod_name(self) -> str:
+        """The name of the K8s pod."""
         return self.state.unit_broker.unit.name.replace("/", "-")
 
-    def create_nodeport_service(self, svc_port: int) -> None:
+    @property
+    def service_name(self) -> str:
+        """Builds the service name for a given auth mechanism."""
+        return f"{self.pod_name}-{self.auth_mechanism.lower()}"
+
+    @property
+    def node_port(self) -> int:
+        """Builds the complete nodePort for the current unit."""
+        return self.state.unit_broker.base_node_port + self.get_auth_mechanism_port_offset(
+            self.auth_mechanism
+        )
+
+    @staticmethod
+    def get_auth_mechanism_port_offset(auth_mechanism: AuthMechanism) -> int:
+        """The port offset for different auth mechanisms."""
+        # NOTE - this limits us to 99 brokers and 9 auth mechanisms, which is probably fine for now
+        # we can revisit this later if needed
+        return list(SECURITY_PROTOCOL_PORTS.keys()).index(auth_mechanism)
+
+    def create_nodeport_service(self) -> None:
         """Creates a NodePort service for external access to the current running unit.
 
         In order to discover all Kafka brokers, a client application must know the location of at least 1
@@ -86,13 +113,17 @@ class K8sManager:
         to the client application, here specified as <NODE-IP>:<NODE-PORT>.
 
         K8s-external requests hit <NODE-IP>:<NODE-PORT>, and are redirected to the corresponding
-        statefulset.kubernetes.io/pod-name from the selector, and port from `svc_port`.
+        statefulset.kubernetes.io/pod-name from the selector, and port matching the auth mechanism.
 
         If a pod was rescheduled to a new node, the node-ip defined in the `advertised.listeners`
         will be updated during the normal charm `config-changed` reconciliation.
 
-        Args:
-            svc_port: the port for the client service, as defined in the `listeners` server property
+        NodePod will be assigned based on the auth mechanism and broker number.
+        For example, kafka-k8s/1 running with SASL_SSL, will have nodePort 31011:
+            + 30000 (minimum nodePort k8s permits)
+            + 1000 (Kafka's application port offset)
+            + 10 (kafka unit 1)
+            + 1 (SASL_PLAINTEXT auth mechanism)
         """
         if not self.pod.metadata:
             raise Exception("Could not find pod metadata")
@@ -114,14 +145,14 @@ class K8sManager:
             spec=ServiceSpec(
                 externalTrafficPolicy="Local",
                 type="NodePort",
-                selector={"statefulset.kubernetes.io/pod-name": self.service_name},
+                selector={"statefulset.kubernetes.io/pod-name": self.pod_name},
                 ports=[
                     ServicePort(
                         protocol="TCP",
                         port=svc_port,
                         targetPort=svc_port,
-                        nodePort=self.state.unit_broker.node_port,
-                        name=f"{self.state.cluster.app.name}-port",
+                        nodePort=self.node_port,
+                        name=f"{self.state.cluster.app.name}-{self.auth_mechanism.lower()}-port",
                     ),
                 ],
             ),

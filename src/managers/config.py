@@ -114,7 +114,6 @@ class KafkaConfigManager:
         self.workload = workload
         self.config = config
         self.current_version = current_version
-        self.k8s = K8sManager(state=self.state)
 
     @property
     def log_level(self) -> str:
@@ -265,7 +264,9 @@ class KafkaConfigManager:
             f'listener.name.{self.internal_listener.name.lower()}.scram-sha-512.sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username="{username}" password="{password}";'
         ]
         client_scram = [
-            auth.name for auth in (self.external_listeners) if auth.protocol.startswith("SASL_")
+            auth.name
+            for auth in (self.client_listeners + self.external_listeners)
+            if auth.protocol.startswith("SASL_")
         ]
         for name in client_scram:
             scram_properties.append(
@@ -318,19 +319,22 @@ class KafkaConfigManager:
     @property
     def external_listeners(self) -> list[Listener]:
         """Return a list of extra listeners."""
-        return (
-            [
+        listeners = []
+        for auth_mechanism in self.auth_mechanisms:
+            k8s = K8sManager(state=self.state, auth_mechanism=auth_mechanism)
+            if not k8s.service:
+                continue
+
+            listeners.append(
                 Listener(
-                    protocol=auth,
+                    protocol=auth_mechanism,
                     scope="EXTERNAL",
                     host=self.state.unit_broker.host,
-                    node_port=self.state.unit_broker.node_port,
+                    node_port=k8s.node_port,
                 )
-                for auth in self.auth_mechanisms
-            ]
-            if self.k8s.service
-            else []
-        )
+            )
+
+        return listeners
 
     @property
     def all_listeners(self) -> list[Listener]:

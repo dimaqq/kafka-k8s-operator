@@ -255,17 +255,19 @@ class KafkaBroker(RelationState):
         return self.relation_data.get("node-ip", "")
 
     @property
-    def node_port(self) -> int:
+    def base_node_port(self) -> int:
         """The nodePort to assign for the current running unit.
 
         Kafka listeners need to have unique ports, and NodePorts must be between 30000 and 32767.
         It is also helpful for ports to be unique, so as to support multiple brokers on the same node.
         NodePorts also must be between 30000 and 32767.
 
+        The 10 at the end is to reserve 9 ports for security protocols, assigned at service creation.
+
         Returns:
             Integer of nodePort number
         """
-        return self.PORT_MINIMUM + self.KAFKA_PORT_OFFSET + self.unit_id
+        return self.PORT_MINIMUM + self.KAFKA_PORT_OFFSET + (self.unit_id * 10)
 
 
 class ZooKeeper(RelationState):
