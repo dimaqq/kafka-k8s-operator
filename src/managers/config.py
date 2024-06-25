@@ -315,7 +315,9 @@ class KafkaConfigManager:
                     protocol=auth_mechanism,
                     scope="EXTERNAL",
                     host=self.state.unit_broker.host,
-                    node_port=self.state.unit_broker.listener_nodeports[auth_mechanism],
+                    # default in case service not created yet during cluster init
+                    # will resolve during config-changed
+                    node_port=self.state.unit_broker.listener_nodeports.get(auth_mechanism, -1),
                 )
             )
 

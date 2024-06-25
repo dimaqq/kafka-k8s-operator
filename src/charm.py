@@ -188,7 +188,7 @@ class KafkaCharm(TypedCharmBase[CharmConfig]):
             # creating the listener services
             for auth_mechanism in self.config_manager.auth_mechanisms:
                 self.k8s_manager.apply_service(
-                    svc_port=self.state.unit_broker.listener_nodeports[auth_mechanism],
+                    svc_port=SECURITY_PROTOCOL_PORTS[auth_mechanism].external,
                     service_name=self.state.unit_broker.k8s.build_service_name(auth_mechanism),
                 )
 
