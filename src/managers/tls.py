@@ -15,7 +15,6 @@ from core.cluster import ClusterState
 from core.structured_config import CharmConfig
 from core.workload import WorkloadBase
 from literals import GROUP, USER, Substrates
-from managers.k8s import K8sManager
 
 logger = logging.getLogger(__name__)
 
@@ -152,7 +151,10 @@ class TLSManager:
         else:
             return {
                 "sans_ip": sorted(
-                    [str(self.state.bind_address), K8sManager(state=self.state).node_ip]
+                    [
+                        str(self.state.bind_address),
+                        self.state.unit_broker.node_ip,
+                    ]
                 ),
                 "sans_dns": sorted(
                     [

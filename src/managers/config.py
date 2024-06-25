@@ -311,7 +311,7 @@ class KafkaConfigManager:
         """Return a list of extra listeners."""
         listeners = []
         for auth_mechanism in self.auth_mechanisms:
-            k8s = K8sManager(state=self.state, security_protocol=auth_mechanism)
+            k8s = K8sManager(broker=self.state.unit_broker, security_protocol=auth_mechanism)
             if not k8s.service:
                 continue
 

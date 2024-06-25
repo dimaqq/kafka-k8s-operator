@@ -98,7 +98,7 @@ class KafkaCharm(TypedCharmBase[CharmConfig]):
         self.auth_manager = AuthManager(
             state=self.state, workload=self.workload, kafka_opts=self.config_manager.kafka_opts
         )
-        self.k8s_manager = K8sManager(state=self.state)
+        self.k8s_manager = K8sManager(broker=self.state.unit_broker)
 
         self.restart = RollingOpsManager(self, relation="restart", callback=self._restart)
         self.metrics_endpoint = MetricsEndpointProvider(
@@ -174,13 +174,12 @@ class KafkaCharm(TypedCharmBase[CharmConfig]):
             event.defer()
             return
 
-        # persist node-ip, and trigger relation-changed if necessary on other units
-        # handles node changes on reschedule, propagates to config
         self.state.unit_broker.update({"node-ip": self.k8s_manager.node_ip})
 
         if self.config.expose_nodeport:
             for auth_mechanism in self.config_manager.auth_mechanisms:
                 self.k8s_manager.security_protocol = auth_mechanism
+                self.k8s_manager.create_bootstrap_service()
                 self.k8s_manager.create_nodeport_service()
 
         # required settings given zookeeper connection config has been created
@@ -359,13 +358,6 @@ class KafkaCharm(TypedCharmBase[CharmConfig]):
             logger.info(f'Broker {self.unit.name.split("/")[1]} restarted')
         else:
             logger.error(f"Broker {self.unit.name.split('/')[1]} failed to restart")
-
-    # def _on_peer_relation_departed(self, event: RelationDepartedEvent) -> None:
-    #     """Handler for `peer-relation-departed` events."""
-    #     if not event.departing_unit == self.unit:
-    #         return
-    #
-    #     self.k8s_manager.delete_external_service()
 
     @property
     def healthy(self) -> bool:

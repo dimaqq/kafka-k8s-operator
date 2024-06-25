@@ -2,10 +2,11 @@
 # Copyright 2023 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Manager for handling Kafka Kubernetes resources."""
+"""Manager for handling Kafka Kubernetes resources for a single Kafka pod."""
 
 import logging
 from functools import cached_property
+from typing import TYPE_CHECKING
 
 from lightkube.core.client import Client
 from lightkube.core.exceptions import ApiError
@@ -13,8 +14,6 @@ from lightkube.models.core_v1 import ServicePort, ServiceSpec
 from lightkube.models.meta_v1 import ObjectMeta, OwnerReference
 from lightkube.resources.core_v1 import Node, Pod, Service
 
-from core.cluster import ClusterState
-from core.models import KafkaBroker
 from literals import SECURITY_PROTOCOL_PORTS, AuthMechanism
 
 logger = logging.getLogger(__name__)
@@ -24,37 +23,28 @@ logging.getLogger("lightkube").disabled = True
 logging.getLogger("lightkube.core.client").disabled = True
 logging.getLogger("httpx").disabled = True
 
+if TYPE_CHECKING:
+    from core.models import KafkaBroker
+
 
 class K8sManager:
-    """Manager for handling Kafka Kubernetes resources."""
+    """Manager for handling Kafka Kubernetes resources for a single Kafka pod."""
 
     def __init__(
         self,
-        state: ClusterState,
+        broker: "KafkaBroker",
         security_protocol: AuthMechanism = "SASL_PLAINTEXT",
-        broker: KafkaBroker | None = None,
     ):
-        self.state = state
+        self.broker = broker
         self._security_protocol: AuthMechanism = security_protocol
-        self._broker = broker or self.state.unit_broker
 
     @cached_property
     def client(self) -> Client:
         """The Lightkube client."""
         return Client(  # pyright: ignore[reportArgumentType]
-            field_manager=self.state.cluster.app.name,
-            namespace=self.state.model.name,
+            field_manager=self.broker.unit.name,
+            namespace=self.broker.unit._backend.model_name,
         )
-
-    @property
-    def broker(self) -> KafkaBroker:
-        """The KafkaBroker to manage."""
-        return self._broker
-
-    @broker.setter
-    def broker(self, value: KafkaBroker) -> None:
-        """The KafkaBroker to manager setter."""
-        self._broker = value
 
     @property
     def security_protocol(self) -> AuthMechanism:
@@ -67,11 +57,16 @@ class K8sManager:
         self._security_protocol = value
 
     @property
+    def pod_name(self) -> str:
+        """The name of the K8s pod."""
+        return self.broker.unit.name.replace("/", "-")
+
+    @cached_property
     def pod(self) -> Pod:
         """The Pod of the current running unit."""
         return self.client.get(
             res=Pod,
-            name=self.state.unit_broker.unit.name.replace("/", "-"),
+            name=self.pod_name,
         )
 
     @property
@@ -86,6 +81,52 @@ class K8sManager:
         )
 
     @property
+    def service_name(self) -> str:
+        """The service name for a given auth mechanism."""
+        return f"{self.pod_name}-{self.security_protocol.lower().replace('_','-')}"
+
+    @property
+    def bootstrap_service_name(self) -> str:
+        """The service name for a given auth mechanism."""
+        return f"{self.pod_name}-bootstrap"
+
+    @property
+    def bootstrap_node_port(self) -> int:
+        """The port number for the bootstrap-server NodePort service."""
+        return 31000 + self.broker.unit_id
+
+    @property
+    def external_address(self) -> str:
+        """The full address for the pod via nodePort service."""
+        return f"{self.node_ip}:{self.node_port}"
+
+    @cached_property
+    def service(self) -> Service | None:
+        """The external NodePort Service created by the charm."""
+        try:
+            return self.client.get(
+                res=Service,
+                name=self.service_name,
+            )
+        except ApiError as e:
+            # don't worry about defining a service during cluster init
+            # as it doesn't exist yet to `kubectl get`
+            logger.warning(e)
+            return
+
+    @property
+    def node_port(self) -> int:
+        """The port number of the Node the current running unit is on."""
+        # all these redundant checks are because Lightkube's typing is awful
+        if not self.service:
+            return -1
+
+        if not self.service.spec or not self.service.spec.ports:
+            raise Exception("Could not find Service spec or ports")
+
+        return self.service.spec.ports[0].nodePort
+
+    @property
     def node_ip(self) -> str:
         """The ip address of the Node the current running unit is on."""
         # all these redundant checks are because Lightkube's typing is awful
@@ -98,42 +139,8 @@ class K8sManager:
 
         return ""
 
-    @property
-    def pod_name(self) -> str:
-        """The name of the K8s pod."""
-        return self.state.unit_broker.unit.name.replace("/", "-")
-
-    @property
-    def service_name(self) -> str:
-        """Builds the service name for a given auth mechanism."""
-        return f"{self.pod_name}-{self.security_protocol.lower().replace('_','-')}"
-
-    @property
-    def node_port(self) -> int:
-        """Builds the complete nodePort for the current unit."""
-        return self.state.unit_broker.base_node_port + self.get_security_protocol_port_offset(
-            self.security_protocol
-        )
-
-    @staticmethod
-    def get_security_protocol_port_offset(security_protocol: AuthMechanism) -> int:
-        """The port offset for different auth mechanisms."""
-        # NOTE - this limits us to 99 brokers and 9 auth mechanisms, which is probably fine for now
-        # we can revisit this later if needed
-        return list(SECURITY_PROTOCOL_PORTS.keys()).index(security_protocol)
-
-    @property
-    def external_bootstrap_servers(self) -> str:
-        """Comma-delimited string of `bootstrap-server` for external access."""
-        bootstrap_server = []
-        for broker in self.state.brokers:
-            self.broker = broker
-            bootstrap_server.append(f"{self.node_ip}:{self.node_port}")
-
-        return ",".join(sorted(bootstrap_server))
-
-    def create_nodeport_service(self) -> None:
-        """Creates a NodePort service for external access to the current running unit.
+    def create_bootstrap_service(self) -> None:
+        """Creates a NodePort service for bootstrap-servers during initial client connection.
 
         In order to discover all Kafka brokers, a client application must know the location of at least 1
         active broker, `bootstrap-server`. From there, the broker returns the `advertised.listeners`
@@ -144,23 +151,16 @@ class K8sManager:
 
         If a pod was rescheduled to a new node, the node-ip defined in the `advertised.listeners`
         will be updated during the normal charm `config-changed` reconciliation.
-
-        NodePod will be assigned based on the auth mechanism and broker number.
-        For example, kafka-k8s/1 running with SASL_SSL, will have nodePort 31011:
-            + 30000 (minimum nodePort k8s permits)
-            + 1000 (Kafka's application port offset)
-            + 10 (kafka unit 1)
-            + 1 (SASL_PLAINTEXT auth mechanism)
         """
         if not self.pod.metadata:
             raise Exception("Could not find pod metadata")
 
-        svc_port = SECURITY_PROTOCOL_PORTS[self.security_protocol].external
+        svc_port = SECURITY_PROTOCOL_PORTS[self.security_protocol].client
 
         service = Service(
             metadata=ObjectMeta(
-                name=self.service_name,
-                namespace=self.state.model.name,
+                name=self.bootstrap_service_name,
+                namespace=self.broker.unit._backend.model_name,
                 ownerReferences=[
                     OwnerReference(
                         apiVersion=self.pod.apiVersion,
@@ -180,8 +180,8 @@ class K8sManager:
                         protocol="TCP",
                         port=svc_port,
                         targetPort=svc_port,
-                        nodePort=self.node_port,
-                        name=f"{self.service_name}-port",
+                        name=f"{self.bootstrap_service_name}-port",
+                        nodePort=self.bootstrap_node_port,
                     ),
                 ],
             ),
@@ -189,16 +189,43 @@ class K8sManager:
 
         self.client.apply(service)  # pyright: ignore[reportAttributeAccessIssue]
 
-    @property
-    def service(self) -> Service | None:
-        """The external NodePort Service created by the charm."""
-        try:
-            return self.client.get(
-                res=Service,
+    def create_nodeport_service(self) -> None:
+        """Creates a NodePort service for external access to the current running unit.
+
+        These services will be returned by clients connecting to bootstrap-servers, in the advertised.listeners.
+        """
+        if not self.pod.metadata:
+            raise Exception("Could not find pod metadata")
+
+        svc_port = SECURITY_PROTOCOL_PORTS[self.security_protocol].external
+
+        service = Service(
+            metadata=ObjectMeta(
                 name=self.service_name,
-            )
-        except ApiError as e:
-            # don't worry about defining a service during cluster init
-            # as it doesn't exist yet to `kubectl get`
-            logger.warning(e)
-            return
+                namespace=self.broker.unit._backend.model_name,
+                ownerReferences=[
+                    OwnerReference(
+                        apiVersion=self.pod.apiVersion,
+                        kind=self.pod.kind,
+                        name=self.pod_name,
+                        uid=self.pod.metadata.uid,
+                        blockOwnerDeletion=False,
+                    )
+                ],
+            ),
+            spec=ServiceSpec(
+                externalTrafficPolicy="Local",
+                type="NodePort",
+                selector={"statefulset.kubernetes.io/pod-name": self.pod_name},
+                ports=[
+                    ServicePort(
+                        protocol="TCP",
+                        port=svc_port,
+                        targetPort=svc_port,
+                        name=f"{self.service_name}-port",
+                    ),
+                ],
+            ),
+        )
+
+        self.client.apply(service)  # pyright: ignore[reportAttributeAccessIssue]

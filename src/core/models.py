@@ -255,7 +255,6 @@ class KafkaBroker(RelationState):
 
         Kafka listeners need to have unique ports, and NodePorts must be between 30000 and 32767.
         It is also helpful for ports to be unique, so as to support multiple brokers on the same node.
-        NodePorts also must be between 30000 and 32767.
 
         The 10 at the end is to reserve 9 ports for security protocols, assigned at service creation.
 
