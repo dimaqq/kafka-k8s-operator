@@ -20,7 +20,6 @@ from literals import (
     AuthMechanism,
     Scope,
 )
-from managers.k8s import K8sManager
 
 logger = logging.getLogger(__name__)
 
@@ -311,16 +310,12 @@ class KafkaConfigManager:
         """Return a list of extra listeners."""
         listeners = []
         for auth_mechanism in self.auth_mechanisms:
-            k8s = K8sManager(broker=self.state.unit_broker, security_protocol=auth_mechanism)
-            if not k8s.service:
-                continue
-
             listeners.append(
                 Listener(
                     protocol=auth_mechanism,
                     scope="EXTERNAL",
                     host=self.state.unit_broker.host,
-                    node_port=k8s.node_port,
+                    node_port=self.state.unit_broker.listener_nodeports[auth_mechanism],
                 )
             )
 

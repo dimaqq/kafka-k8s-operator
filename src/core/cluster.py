@@ -33,7 +33,6 @@ from literals import (
 )
 
 # uncomfortable circular import necessary, as node information cannot live in Juju state
-from managers.k8s import K8sManager
 
 
 class ClusterState(Object):
@@ -204,16 +203,9 @@ class ClusterState(Object):
         )
 
     @property
-    def bootstrap_server_external(self) -> str:
+    def bootstrap_servers_external(self) -> str:
         """Comma-delimited string of `bootstrap-server` for external access."""
-        return ",".join(
-            sorted(
-                [
-                    K8sManager(broker, self.security_protocol).external_address
-                    for broker in self.brokers
-                ]
-            )
-        )
+        return ",".join(sorted([broker.bootstrap_server_external for broker in self.brokers]))
 
     @property
     def bootstrap_server(self) -> str:
@@ -226,7 +218,7 @@ class ClusterState(Object):
             return ""
 
         if self.config.expose_nodeport:  # implicitly checks for k8s in structured_config
-            return self.bootstrap_server_external
+            return self.bootstrap_servers_external
 
         return ",".join(
             sorted(

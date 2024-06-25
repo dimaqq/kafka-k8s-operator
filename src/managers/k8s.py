@@ -9,12 +9,11 @@ from functools import cached_property
 from typing import TYPE_CHECKING
 
 from lightkube.core.client import Client
-from lightkube.core.exceptions import ApiError
 from lightkube.models.core_v1 import ServicePort, ServiceSpec
 from lightkube.models.meta_v1 import ObjectMeta, OwnerReference
 from lightkube.resources.core_v1 import Node, Pod, Service
 
-from literals import SECURITY_PROTOCOL_PORTS, AuthMechanism
+from literals import AuthMechanism
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +23,7 @@ logging.getLogger("lightkube.core.client").disabled = True
 logging.getLogger("httpx").disabled = True
 
 if TYPE_CHECKING:
-    from core.models import KafkaBroker
+    pass
 
 
 class K8sManager:
@@ -32,115 +31,88 @@ class K8sManager:
 
     def __init__(
         self,
-        broker: "KafkaBroker",
-        security_protocol: AuthMechanism = "SASL_PLAINTEXT",
+        pod_name: str,
+        namespace: str,
     ):
-        self.broker = broker
-        self._security_protocol: AuthMechanism = security_protocol
+        self.pod_name = pod_name
+        self.namespace = namespace
 
     @cached_property
     def client(self) -> Client:
         """The Lightkube client."""
         return Client(  # pyright: ignore[reportArgumentType]
-            field_manager=self.broker.unit.name,
-            namespace=self.broker.unit._backend.model_name,
+            field_manager=self.pod_name,
+            namespace=self.namespace,
         )
 
-    @property
-    def security_protocol(self) -> AuthMechanism:
-        """The proposed security protocol for the service."""
-        return self._security_protocol
+    # --- GETTERS ---
 
-    @security_protocol.setter
-    def security_protocol(self, value: AuthMechanism) -> None:
-        """Internal security_protocol setter."""
-        self._security_protocol = value
+    def get_pod(self, pod_name: str = "") -> Pod:
+        """Gets the Pod via the K8s API."""
+        # Allows us to get pods from other peer units
+        pod_name = pod_name or self.pod_name
 
-    @property
-    def pod_name(self) -> str:
-        """The name of the K8s pod."""
-        return self.broker.unit.name.replace("/", "-")
+        logger.info(f"Getting pod - {self.pod_name=}, {self.namespace=}")
 
-    @cached_property
-    def pod(self) -> Pod:
-        """The Pod of the current running unit."""
         return self.client.get(
             res=Pod,
             name=self.pod_name,
         )
 
-    @property
-    def node(self) -> Node:
-        """The Node the current running unit is on."""
-        if not self.pod.spec or not self.pod.spec.nodeName:
+    def get_node(self, pod: Pod) -> Node:
+        """Gets the Node the Pod is running on via the K8s API."""
+        if not pod.spec or not pod.spec.nodeName:
             raise Exception("Could not find podSpec or nodeName")
 
         return self.client.get(
             Node,
-            name=self.pod.spec.nodeName,
+            name=pod.spec.nodeName,
         )
 
-    @property
-    def service_name(self) -> str:
-        """The service name for a given auth mechanism."""
-        return f"{self.pod_name}-{self.security_protocol.lower().replace('_','-')}"
-
-    @property
-    def bootstrap_service_name(self) -> str:
-        """The service name for a given auth mechanism."""
-        return f"{self.pod_name}-bootstrap"
-
-    @property
-    def bootstrap_node_port(self) -> int:
-        """The port number for the bootstrap-server NodePort service."""
-        return 31000 + self.broker.unit_id
-
-    @property
-    def external_address(self) -> str:
-        """The full address for the pod via nodePort service."""
-        return f"{self.node_ip}:{self.node_port}"
-
-    @cached_property
-    def service(self) -> Service | None:
-        """The external NodePort Service created by the charm."""
-        try:
-            return self.client.get(
-                res=Service,
-                name=self.service_name,
-            )
-        except ApiError as e:
-            # don't worry about defining a service during cluster init
-            # as it doesn't exist yet to `kubectl get`
-            logger.warning(e)
-            return
-
-    @property
-    def node_port(self) -> int:
-        """The port number of the Node the current running unit is on."""
+    def get_node_ip(self, node: Node) -> str:
+        """Gets the IP Address of the Node via the K8s API."""
         # all these redundant checks are because Lightkube's typing is awful
-        if not self.service:
-            return -1
+        if not node.status or not node.status.addresses:
+            raise Exception(f"No status found for {node}")
 
-        if not self.service.spec or not self.service.spec.ports:
-            raise Exception("Could not find Service spec or ports")
-
-        return self.service.spec.ports[0].nodePort
-
-    @property
-    def node_ip(self) -> str:
-        """The ip address of the Node the current running unit is on."""
-        # all these redundant checks are because Lightkube's typing is awful
-        if not self.node.status or not self.node.status.addresses:
-            raise Exception(f"No status found for {self.node}")
-
-        for addresses in self.node.status.addresses:
+        for addresses in node.status.addresses:
             if addresses.type in ["ExternalIP", "InternalIP", "Hostname"]:
                 return addresses.address
 
         return ""
 
-    def create_bootstrap_service(self) -> None:
-        """Creates a NodePort service for bootstrap-servers during initial client connection.
+    def get_service(self, service_name: str) -> Service | None:
+        """Gets the Service via the K8s API."""
+        return self.client.get(
+            res=Service,
+            name=service_name,
+        )
+
+    def get_node_port(self, service: Service) -> int:
+        """Gets the NodePort number for the service via the K8s API."""
+        if not service.spec or not service.spec.ports:
+            raise Exception("Could not find Service spec or ports")
+
+        return service.spec.ports[0].nodePort
+
+    def build_service_name(self, auth_mechanism: AuthMechanism):
+        """Builds the Service name for a given auth.mechanism."""
+        return f"{self.pod_name}-{auth_mechanism.lower().replace('_','-')}"
+
+    def build_bootstrap_service_name(self):
+        """Builds the Service name for bootstrap-server."""
+        return f"{self.pod_name}-bootstrap"
+
+    def get_listener_nodeport(self, auth_mechanism: AuthMechanism) -> int:
+        """Gets the current NodePort for the desired auth.mechanism service."""
+        service_name = self.build_service_name(auth_mechanism)
+        if not (service := self.get_service(service_name)):
+            raise Exception(f"Unable to find Service using {auth_mechanism}")
+
+        return self.get_node_port(service)
+
+    def apply_service(self, svc_port: int, service_name: str, nodeport: int | None = None) -> None:
+        """Creates a NodePort service for initial client connection.
 
         In order to discover all Kafka brokers, a client application must know the location of at least 1
         active broker, `bootstrap-server`. From there, the broker returns the `advertised.listeners`
@@ -152,21 +124,20 @@ class K8sManager:
         If a pod was rescheduled to a new node, the node-ip defined in the `advertised.listeners`
         will be updated during the normal charm `config-changed` reconciliation.
         """
-        if not self.pod.metadata:
-            raise Exception("Could not find pod metadata")
-
-        svc_port = SECURITY_PROTOCOL_PORTS[self.security_protocol].client
+        pod = self.get_pod(pod_name=self.pod_name)
+        if not pod.metadata:
+            raise Exception(f"Could not find metadata for {pod}")
 
         service = Service(
             metadata=ObjectMeta(
-                name=self.bootstrap_service_name,
-                namespace=self.broker.unit._backend.model_name,
+                name=service_name,
+                namespace=self.namespace,
                 ownerReferences=[
                     OwnerReference(
-                        apiVersion=self.pod.apiVersion,
-                        kind=self.pod.kind,
+                        apiVersion=pod.apiVersion,
+                        kind=pod.kind,
                         name=self.pod_name,
-                        uid=self.pod.metadata.uid,
+                        uid=pod.metadata.uid,
                         blockOwnerDeletion=False,
                     )
                 ],
@@ -180,49 +151,8 @@ class K8sManager:
                         protocol="TCP",
                         port=svc_port,
                         targetPort=svc_port,
-                        name=f"{self.bootstrap_service_name}-port",
-                        nodePort=self.bootstrap_node_port,
-                    ),
-                ],
-            ),
-        )
-
-        self.client.apply(service)  # pyright: ignore[reportAttributeAccessIssue]
-
-    def create_nodeport_service(self) -> None:
-        """Creates a NodePort service for external access to the current running unit.
-
-        These services will be returned by clients connecting to bootstrap-servers, in the advertised.listeners.
-        """
-        if not self.pod.metadata:
-            raise Exception("Could not find pod metadata")
-
-        svc_port = SECURITY_PROTOCOL_PORTS[self.security_protocol].external
-
-        service = Service(
-            metadata=ObjectMeta(
-                name=self.service_name,
-                namespace=self.broker.unit._backend.model_name,
-                ownerReferences=[
-                    OwnerReference(
-                        apiVersion=self.pod.apiVersion,
-                        kind=self.pod.kind,
-                        name=self.pod_name,
-                        uid=self.pod.metadata.uid,
-                        blockOwnerDeletion=False,
-                    )
-                ],
-            ),
-            spec=ServiceSpec(
-                externalTrafficPolicy="Local",
-                type="NodePort",
-                selector={"statefulset.kubernetes.io/pod-name": self.pod_name},
-                ports=[
-                    ServicePort(
-                        protocol="TCP",
-                        port=svc_port,
-                        targetPort=svc_port,
-                        name=f"{self.service_name}-port",
+                        name=f"{service_name}-port",
+                        nodePort=nodeport,
                     ),
                 ],
             ),

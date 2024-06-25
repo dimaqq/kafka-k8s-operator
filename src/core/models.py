@@ -9,11 +9,20 @@ import logging
 from charms.data_platform_libs.v0.data_interfaces import Data, DataPeerData, DataPeerUnitData
 from charms.zookeeper.v0.client import QuorumLeaderNotFoundError, ZooKeeperManager
 from kazoo.client import AuthFailedError, NoNodeError
+from lightkube.core.exceptions import ApiError
+from lightkube.resources.core_v1 import Node, Pod
 from ops.model import Application, Relation, Unit
 from tenacity import retry, retry_if_result, stop_after_attempt, wait_fixed
 from typing_extensions import override
 
-from literals import INTERNAL_USERS, SECRETS_APP, Substrates
+from literals import (
+    INTERNAL_USERS,
+    SECRETS_APP,
+    SECURITY_PROTOCOL_PORTS,
+    AuthMechanism,
+    Substrates,
+)
+from managers.k8s import K8sManager
 
 logger = logging.getLogger(__name__)
 
@@ -146,6 +155,10 @@ class KafkaBroker(RelationState):
         super().__init__(relation, data_interface, component, substrate)
         self.data_interface = data_interface
         self.unit = component
+        self.k8s = K8sManager(
+            pod_name=self.pod_name,
+            namespace=self.unit._backend.model_name,
+        )
 
     @property
     def unit_id(self) -> int:
@@ -238,30 +251,77 @@ class KafkaBroker(RelationState):
         return self.relation_data.get("truststore-password", "")
 
     @property
-    def node_ip(self) -> str:
-        """The IP of the Kubernetes node the unit is on.
+    def pod_name(self) -> str:
+        """The name of the K8s Pod for the unit.
 
         K8s-only.
-
-        Returns:
-            String of IPV4/IPV6 IP address for the node the unit is on
-            None if the broker cluster is not exposed
         """
-        return self.relation_data.get("node-ip", "")
+        return self.unit.name.replace("/", "-")
 
     @property
-    def base_node_port(self) -> int:
-        """The nodePort to assign for the current running unit.
+    def pod(self) -> Pod:
+        """The Pod of the unit.
 
-        Kafka listeners need to have unique ports, and NodePorts must be between 30000 and 32767.
-        It is also helpful for ports to be unique, so as to support multiple brokers on the same node.
-
-        The 10 at the end is to reserve 9 ports for security protocols, assigned at service creation.
-
-        Returns:
-            Integer of nodePort number
+        K8s-only.
         """
-        return self.PORT_MINIMUM + self.KAFKA_PORT_OFFSET + (self.unit_id * 10)
+        return self.k8s.get_pod(pod_name=self.pod_name)
+
+    @property
+    def node(self) -> Node:
+        """The Node the unit is scheduled on.
+
+        K8s-only.
+        """
+        return self.k8s.get_node(pod=self.pod)
+
+    @property
+    def node_ip(self) -> str:
+        """The IPV4/IPV6 IP address the Node the unit is on.
+
+        K8s-only.
+        """
+        return self.k8s.get_node_ip(node=self.node)
+
+    @property
+    def bootstrap_service_name(self) -> str:
+        """The Service name for bootstrap-server.
+
+        K8s-only.
+        """
+        return self.k8s.build_bootstrap_service_name()
+
+    @property
+    def bootstrap_node_port(self) -> int:
+        """The port number for the bootstrap-server NodePort service.
+
+        K8s-only.
+        """
+        return self.PORT_MINIMUM + self.KAFKA_PORT_OFFSET + self.unit_id
+
+    @property
+    def bootstrap_server_external(self) -> str:
+        """The externally-accessible bootstrap-server address for the unit.
+
+        K8s-only.
+        """
+        return f"{self.node_ip}:{self.bootstrap_node_port}"
+
+    @property
+    def listener_nodeports(self) -> dict[AuthMechanism, int]:
+        """Dict of all available auth-mechanisms, and their corresponding NodePorts if available."""
+        auth_mechanisms: list[AuthMechanism] = list(SECURITY_PROTOCOL_PORTS.keys())
+        listener_nodeports = {}
+
+        for mechanism in auth_mechanisms:
+            try:
+                listener_nodeports[mechanism] = self.k8s.get_listener_nodeport(mechanism)
+            except ApiError as e:
+                # don't worry about defining a service during cluster init
+                # as it doesn't exist yet to `kubectl get`
+                logger.warning(e)
+                continue
+
+        return listener_nodeports
 
 
 class ZooKeeper(RelationState):

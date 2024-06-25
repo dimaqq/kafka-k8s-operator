@@ -43,6 +43,7 @@ from literals import (
     METRICS_RULES_DIR,
     PEER,
     REL_NAME,
+    SECURITY_PROTOCOL_PORTS,
     SUBSTRATE,
     USER,
     DebugLevel,
@@ -98,7 +99,9 @@ class KafkaCharm(TypedCharmBase[CharmConfig]):
         self.auth_manager = AuthManager(
             state=self.state, workload=self.workload, kafka_opts=self.config_manager.kafka_opts
         )
-        self.k8s_manager = K8sManager(broker=self.state.unit_broker)
+        self.k8s_manager = K8sManager(
+            pod_name=self.state.unit_broker.pod_name, namespace=self.model.name
+        )
 
         self.restart = RollingOpsManager(self, relation="restart", callback=self._restart)
         self.metrics_endpoint = MetricsEndpointProvider(
@@ -174,13 +177,20 @@ class KafkaCharm(TypedCharmBase[CharmConfig]):
             event.defer()
             return
 
-        self.state.unit_broker.update({"node-ip": self.k8s_manager.node_ip})
-
         if self.config.expose_nodeport:
+            # creating the bootstrap services
+            self.k8s_manager.apply_service(
+                svc_port=SECURITY_PROTOCOL_PORTS[self.state.security_protocol].client,
+                service_name=self.state.unit_broker.bootstrap_service_name,
+                nodeport=self.state.unit_broker.bootstrap_node_port,
+            )
+
+            # creating the listener services
             for auth_mechanism in self.config_manager.auth_mechanisms:
-                self.k8s_manager.security_protocol = auth_mechanism
-                self.k8s_manager.create_bootstrap_service()
-                self.k8s_manager.create_nodeport_service()
+                self.k8s_manager.apply_service(
+                    svc_port=self.state.unit_broker.listener_nodeports[auth_mechanism],
+                    service_name=self.state.unit_broker.k8s.build_service_name(auth_mechanism),
+                )
 
         # required settings given zookeeper connection config has been created
         self.config_manager.set_server_properties()
