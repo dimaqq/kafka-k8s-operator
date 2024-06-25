@@ -4,6 +4,7 @@
 
 """Collection of state objects for the Kafka relations, apps and units."""
 
+from functools import cached_property
 import logging
 
 from charms.data_platform_libs.v0.data_interfaces import Data, DataPeerData, DataPeerUnitData
@@ -258,7 +259,7 @@ class KafkaBroker(RelationState):
         """
         return self.unit.name.replace("/", "-")
 
-    @property
+    @cached_property
     def pod(self) -> Pod:
         """The Pod of the unit.
 
@@ -266,7 +267,7 @@ class KafkaBroker(RelationState):
         """
         return self.k8s.get_pod(pod_name=self.pod_name)
 
-    @property
+    @cached_property
     def node(self) -> Node:
         """The Node the unit is scheduled on.
 
@@ -274,7 +275,7 @@ class KafkaBroker(RelationState):
         """
         return self.k8s.get_node(pod=self.pod)
 
-    @property
+    @cached_property
     def node_ip(self) -> str:
         """The IPV4/IPV6 IP address the Node the unit is on.
 
@@ -306,7 +307,7 @@ class KafkaBroker(RelationState):
         """
         return f"{self.node_ip}:{self.bootstrap_node_port}"
 
-    @property
+    @cached_property
     def listener_nodeports(self) -> dict[AuthMechanism, int]:
         """Dict of all available auth-mechanisms, and their corresponding NodePorts if available."""
         auth_mechanisms: list[AuthMechanism] = list(SECURITY_PROTOCOL_PORTS.keys())
