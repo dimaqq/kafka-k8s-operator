@@ -52,8 +52,6 @@ class K8sManager:
         # Allows us to get pods from other peer units
         pod_name = pod_name or self.pod_name
 
-        logger.info(f"Getting pod - {self.pod_name=}, {self.namespace=}")
-
         return self.client.get(
             res=Pod,
             name=self.pod_name,

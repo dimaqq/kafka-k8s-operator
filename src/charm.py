@@ -141,6 +141,7 @@ class KafkaCharm(TypedCharmBase[CharmConfig]):
         extra_opts = [
             f"-javaagent:{self.workload.paths.jmx_prometheus_javaagent}={JMX_EXPORTER_PORT}:{self.workload.paths.jmx_prometheus_config}",
             f"-Djava.security.auth.login.config={self.workload.paths.zk_jaas}",
+            "-Djavax.net.debug=ssl:handshake:verbose:session:keymanager:trustmanager",
         ]
         command = f"{self.workload.paths.binaries_path}/bin/kafka-server-start.sh {self.workload.paths.server_properties}"
 

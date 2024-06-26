@@ -319,7 +319,7 @@ class KafkaBroker(RelationState):
             except ApiError as e:
                 # don't worry about defining a service during cluster init
                 # as it doesn't exist yet to `kubectl get`
-                logger.warning(e)
+                logger.debug(e)
                 continue
 
         return listener_nodeports

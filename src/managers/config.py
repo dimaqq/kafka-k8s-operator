@@ -124,7 +124,7 @@ class KafkaConfigManager:
         # Remapping to WARN that is generally used in Java applications based on log4j and logback.
         if self.config.log_level == LogLevel.WARNING.value:
             return "WARN"
-        return self.config.log_level
+        return "DEBUG"
 
     @property
     def jmx_opts(self) -> str:
@@ -184,6 +184,7 @@ class KafkaConfigManager:
         opts = [
             f"-Djava.security.auth.login.config={self.workload.paths.zk_jaas}",
             f"-Dcharmed.kafka.log.level={self.log_level}",
+            "-Djavax.net.debug=ssl:handshake:verbose:session:keymanager:trustmanager",
         ]
 
         return f"KAFKA_OPTS='{' '.join(opts)}'"
@@ -310,6 +311,9 @@ class KafkaConfigManager:
         """Return a list of extra listeners."""
         listeners = []
         for auth_mechanism in self.auth_mechanisms:
+            if not (node_port := self.state.unit_broker.listener_nodeports.get(auth_mechanism, None)):
+                continue
+
             listeners.append(
                 Listener(
                     protocol=auth_mechanism,
@@ -317,7 +321,7 @@ class KafkaConfigManager:
                     host=self.state.unit_broker.host,
                     # default in case service not created yet during cluster init
                     # will resolve during config-changed
-                    node_port=self.state.unit_broker.listener_nodeports.get(auth_mechanism, -1),
+                    node_port=node_port,
                 )
             )
 
@@ -326,7 +330,7 @@ class KafkaConfigManager:
     @property
     def all_listeners(self) -> list[Listener]:
         """Return a list with all expected listeners."""
-        return [self.internal_listener] + self.client_listeners + self.external_listeners
+        return [self.internal_listener] + (self.external_listeners if self.external_listeners else self.client_listeners)
 
     @property
     def inter_broker_protocol_version(self) -> str:

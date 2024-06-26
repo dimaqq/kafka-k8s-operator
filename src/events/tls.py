@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 from charms.tls_certificates_interface.v1.tls_certificates import (
     CertificateAvailableEvent,
+    EventBase,
     TLSCertificatesRequiresV1,
     _load_relation_data,
     generate_csr,
@@ -27,7 +28,7 @@ from ops.charm import (
 from ops.framework import Object
 from ops.model import ActiveStatus, BlockedStatus
 
-from literals import TLS_RELATION, TRUSTED_CA_RELATION, TRUSTED_CERTIFICATE_RELATION
+from literals import TLS_RELATION, TRUSTED_CA_RELATION, TRUSTED_CERTIFICATE_RELATION, Status
 
 if TYPE_CHECKING:
     from charm import KafkaCharm
@@ -124,15 +125,14 @@ class TLSHandler(Object):
 
         self.charm.state.cluster.update({"tls": ""})
 
-    def _trusted_relation_created(self, _) -> None:
+    def _trusted_relation_created(self, event: EventBase) -> None:
         """Handle relation created event to trusted tls charm."""
         if not self.charm.unit.is_leader():
             return
 
         if not self.charm.state.cluster.tls_enabled:
-            msg = "Own certificates are not set. Please relate using 'certificates' relation first"
-            logger.error(msg)
-            self.charm.app.status = BlockedStatus(msg)
+            self.charm._set_status(Status.NO_CERT)
+            event.defer()
             return
 
         # Create a "mtls" flag so a new listener (CLIENT_SSL) is created
@@ -143,7 +143,7 @@ class TLSHandler(Object):
         """Generate a CSR so the tls-certificates operator works as expected."""
         # Once the certificates have been added, TLS setup has finished
         if not self.charm.state.unit_broker.certificate:
-            logger.debug("Missing TLS relation, deferring")
+            self.charm._set_status(Status.NO_CERT)
             event.defer()
             return
 
