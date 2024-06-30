@@ -330,7 +330,7 @@ class KafkaConfigManager:
     @property
     def all_listeners(self) -> list[Listener]:
         """Return a list with all expected listeners."""
-        return [self.internal_listener] + (self.external_listeners if self.external_listeners else self.client_listeners)
+        return [self.internal_listener] + self.client_listeners + self.external_listeners
 
     @property
     def inter_broker_protocol_version(self) -> str:

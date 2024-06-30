@@ -181,7 +181,7 @@ class KafkaCharm(TypedCharmBase[CharmConfig]):
         if self.config.expose_nodeport:
             # creating the bootstrap services
             self.k8s_manager.apply_service(
-                svc_port=SECURITY_PROTOCOL_PORTS[self.state.security_protocol].client,
+                svc_port=SECURITY_PROTOCOL_PORTS[self.state.security_protocol].external,
                 service_name=self.state.unit_broker.bootstrap_service_name,
                 nodeport=self.state.unit_broker.bootstrap_node_port,
             )
