@@ -205,7 +205,7 @@ class ClusterState(Object):
     @property
     def bootstrap_servers_external(self) -> str:
         """Comma-delimited string of `bootstrap-server` for external access."""
-        return ",".join(sorted([broker.bootstrap_server_external for broker in self.brokers]))
+        return ",".join(sorted({broker.bootstrap_server_external for broker in self.brokers}))
 
     @property
     def bootstrap_server(self) -> str:

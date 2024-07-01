@@ -179,19 +179,20 @@ class KafkaCharm(TypedCharmBase[CharmConfig]):
             return
 
         if self.config.expose_nodeport:
-            # creating the bootstrap services
-            self.k8s_manager.apply_service(
+            # every unit attempts to create a bootstrap service
+            # if exists, will silently continue
+            bootstrap_service = self.k8s_manager.build_bootstrap_service(
                 svc_port=SECURITY_PROTOCOL_PORTS[self.state.security_protocol].external,
-                service_name=self.state.unit_broker.bootstrap_service_name,
-                nodeport=self.state.unit_broker.bootstrap_node_port,
             )
+            self.k8s_manager.apply_service(service=bootstrap_service)
 
-            # creating the listener services
+            # creating the per-broker listener services
             for auth_mechanism in self.config_manager.auth_mechanisms:
-                self.k8s_manager.apply_service(
+                listener_service = self.k8s_manager.build_listener_service(
                     svc_port=SECURITY_PROTOCOL_PORTS[auth_mechanism].external,
                     service_name=self.state.unit_broker.k8s.build_service_name(auth_mechanism),
                 )
+                self.k8s_manager.apply_service(service=listener_service)
 
         # required settings given zookeeper connection config has been created
         self.config_manager.set_server_properties()

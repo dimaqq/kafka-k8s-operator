@@ -4,8 +4,8 @@
 
 """Collection of state objects for the Kafka relations, apps and units."""
 
-from functools import cached_property
 import logging
+from functools import cached_property
 
 from charms.data_platform_libs.v0.data_interfaces import Data, DataPeerData, DataPeerUnitData
 from charms.zookeeper.v0.client import QuorumLeaderNotFoundError, ZooKeeperManager
@@ -284,20 +284,13 @@ class KafkaBroker(RelationState):
         return self.k8s.get_node_ip(node=self.node)
 
     @property
-    def bootstrap_service_name(self) -> str:
-        """The Service name for bootstrap-server.
-
-        K8s-only.
-        """
-        return self.k8s.build_bootstrap_service_name()
-
-    @property
     def bootstrap_node_port(self) -> int:
         """The port number for the bootstrap-server NodePort service.
 
         K8s-only.
         """
-        return self.PORT_MINIMUM + self.KAFKA_PORT_OFFSET + self.unit_id
+        bootstrap_service = self.k8s.get_service(service_name=self.k8s.bootstrap_service_name)
+        return self.k8s.get_node_port(service=bootstrap_service)
 
     @property
     def bootstrap_server_external(self) -> str:

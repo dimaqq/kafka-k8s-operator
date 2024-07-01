@@ -26,7 +26,7 @@ from ops.charm import (
     RelationJoinedEvent,
 )
 from ops.framework import Object
-from ops.model import ActiveStatus, BlockedStatus
+from ops.model import ActiveStatus
 
 from literals import TLS_RELATION, TRUSTED_CA_RELATION, TRUSTED_CERTIFICATE_RELATION, Status
 

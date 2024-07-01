@@ -311,7 +311,9 @@ class KafkaConfigManager:
         """Return a list of extra listeners."""
         listeners = []
         for auth_mechanism in self.auth_mechanisms:
-            if not (node_port := self.state.unit_broker.listener_nodeports.get(auth_mechanism, None)):
+            if not (
+                node_port := self.state.unit_broker.listener_nodeports.get(auth_mechanism, None)
+            ):
                 continue
 
             listeners.append(

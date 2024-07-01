@@ -9,6 +9,7 @@ from functools import cached_property
 from typing import TYPE_CHECKING
 
 from lightkube.core.client import Client
+from lightkube.core.exceptions import ApiError
 from lightkube.models.core_v1 import ServicePort, ServiceSpec
 from lightkube.models.meta_v1 import ObjectMeta, OwnerReference
 from lightkube.resources.core_v1 import Node, Pod, Service
@@ -35,7 +36,10 @@ class K8sManager:
         namespace: str,
     ):
         self.pod_name = pod_name
+        self.app_name = pod_name.split("-")[0]
         self.namespace = namespace
+
+        self.bootstrap_service_name = f"{self.app_name}-bootstrap"
 
     @cached_property
     def client(self) -> Client:
@@ -97,10 +101,6 @@ class K8sManager:
         """Builds the Service name for a given auth.mechanism."""
         return f"{self.pod_name}-{auth_mechanism.lower().replace('_','-')}"
 
-    def build_bootstrap_service_name(self):
-        """Builds the Service name for bootstrap-server."""
-        return f"{self.pod_name}-bootstrap"
-
     def get_listener_nodeport(self, auth_mechanism: AuthMechanism) -> int:
         """Gets the current NodePort for the desired auth.mechanism service."""
         service_name = self.build_service_name(auth_mechanism)
@@ -109,8 +109,36 @@ class K8sManager:
 
         return self.get_node_port(service)
 
-    def apply_service(self, svc_port: int, service_name: str, nodeport: int | None = None) -> None:
-        """Creates a NodePort service for initial client connection.
+    def build_bootstrap_service(self, svc_port: int) -> Service:
+        """Builds a ClusterIP service for initial client connection."""
+        pod = self.get_pod(pod_name=self.pod_name)
+        if not pod.metadata:
+            raise Exception(f"Could not find metadata for {pod}")
+
+        return Service(
+            metadata=ObjectMeta(
+                name=self.bootstrap_service_name,
+                namespace=self.namespace,
+                # owned by the StatefulSet
+                ownerReferences=pod.metadata.ownerReferences,
+            ),
+            spec=ServiceSpec(
+                externalTrafficPolicy="Local",
+                type="NodePort",
+                selector={"app.kubernetes.io/name": self.app_name},
+                ports=[
+                    ServicePort(
+                        protocol="TCP",
+                        port=svc_port,
+                        targetPort=svc_port,
+                        name=f"{self.bootstrap_service_name}-port",
+                    ),
+                ],
+            ),
+        )
+
+    def build_listener_service(self, svc_port: int, service_name: str) -> Service:
+        """Builds a NodePort service for individual brokers + security.protocols.
 
         In order to discover all Kafka brokers, a client application must know the location of at least 1
         active broker, `bootstrap-server`. From there, the broker returns the `advertised.listeners`
@@ -126,7 +154,7 @@ class K8sManager:
         if not pod.metadata:
             raise Exception(f"Could not find metadata for {pod}")
 
-        service = Service(
+        return Service(
             metadata=ObjectMeta(
                 name=service_name,
                 namespace=self.namespace,
@@ -150,10 +178,19 @@ class K8sManager:
                         port=svc_port,
                         targetPort=svc_port,
                         name=f"{service_name}-port",
-                        nodePort=nodeport,
                     ),
                 ],
             ),
         )
 
-        self.client.apply(service)  # pyright: ignore[reportAttributeAccessIssue]
+    def apply_service(self, service: Service) -> None:
+        """Applies a given Service."""
+        try:
+            self.client.apply(service)
+        except ApiError as e:
+            if e.status.code == 403:
+                logger.error("Could not apply service, application needs `juju trust`")
+                return
+            if e.status.code == 422 and "port is already allocated" in e.status.message:
+                logger.error(e.status.message)
+                return
