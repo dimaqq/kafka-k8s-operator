@@ -214,3 +214,5 @@ class K8sManager:
             if e.status.code == 422 and "port is already allocated" in e.status.message:
                 logger.error(e.status.message)
                 return
+            else:
+                raise
