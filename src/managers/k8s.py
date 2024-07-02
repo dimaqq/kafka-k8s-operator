@@ -13,7 +13,7 @@ from lightkube.models.core_v1 import ServicePort, ServiceSpec
 from lightkube.models.meta_v1 import ObjectMeta, OwnerReference
 from lightkube.resources.core_v1 import Node, Pod, Service
 
-from literals import AuthMechanism
+from literals import SECURITY_PROTOCOL_PORTS, AuthMechanism
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +34,6 @@ class K8sManager:
         self.pod_name = pod_name
         self.app_name = pod_name.split("-")[0]
         self.namespace = namespace
-
-        self.bootstrap_service_name = f"{self.app_name}-bootstrap"
 
     @cached_property
     def client(self) -> Client:
@@ -93,27 +91,42 @@ class K8sManager:
 
         return service.spec.ports[0].nodePort
 
-    def build_service_name(self, auth_mechanism: AuthMechanism):
+    def build_listener_service_name(self, auth_mechanism: AuthMechanism):
         """Builds the Service name for a given auth.mechanism."""
         return f"{self.pod_name}-{auth_mechanism.lower().replace('_','-')}"
 
+    def build_bootstrap_service_name(self, auth_mechanism: AuthMechanism):
+        """Builds the bootstrap Service name for a given auth.mechanism."""
+        return f"{self.app_name}-{auth_mechanism.lower().replace('_','-')}-bootstrap"
+
     def get_listener_nodeport(self, auth_mechanism: AuthMechanism) -> int:
         """Gets the current NodePort for the desired auth.mechanism service."""
-        service_name = self.build_service_name(auth_mechanism)
+        service_name = self.build_listener_service_name(auth_mechanism)
         if not (service := self.get_service(service_name)):
             raise Exception(f"Unable to find Service using {auth_mechanism}")
 
         return self.get_node_port(service)
 
-    def build_bootstrap_service(self, svc_port: int) -> Service:
+    def get_bootstrap_nodeport(self, auth_mechanism: AuthMechanism) -> int:
+        """Gets the current NodePort for the desired bootstrap auth.mechanism service."""
+        service_name = self.build_bootstrap_service_name(auth_mechanism)
+        if not (service := self.get_service(service_name)):
+            raise Exception(f"Unable to find Service using {auth_mechanism}")
+
+        return self.get_node_port(service)
+
+    def build_bootstrap_service(self, auth_mechanism: AuthMechanism) -> Service:
         """Builds a ClusterIP service for initial client connection."""
         pod = self.get_pod(pod_name=self.pod_name)
         if not pod.metadata:
             raise Exception(f"Could not find metadata for {pod}")
 
+        service_name = self.build_bootstrap_service_name(auth_mechanism)
+        svc_port = SECURITY_PROTOCOL_PORTS[auth_mechanism].external
+
         return Service(
             metadata=ObjectMeta(
-                name=self.bootstrap_service_name,
+                name=service_name,
                 namespace=self.namespace,
                 # owned by the StatefulSet
                 ownerReferences=pod.metadata.ownerReferences,
@@ -127,13 +140,13 @@ class K8sManager:
                         protocol="TCP",
                         port=svc_port,
                         targetPort=svc_port,
-                        name=f"{self.bootstrap_service_name}-port",
+                        name=f"{service_name}-port",
                     ),
                 ],
             ),
         )
 
-    def build_listener_service(self, svc_port: int, service_name: str) -> Service:
+    def build_listener_service(self, auth_mechanism: AuthMechanism) -> Service:
         """Builds a NodePort service for individual brokers + security.protocols.
 
         In order to discover all Kafka brokers, a client application must know the location of at least 1
@@ -149,6 +162,9 @@ class K8sManager:
         pod = self.get_pod(pod_name=self.pod_name)
         if not pod.metadata:
             raise Exception(f"Could not find metadata for {pod}")
+
+        service_name = self.build_listener_service_name(auth_mechanism)
+        svc_port = SECURITY_PROTOCOL_PORTS[auth_mechanism].external
 
         return Service(
             metadata=ObjectMeta(

@@ -42,7 +42,6 @@ from literals import (
     METRICS_RULES_DIR,
     PEER,
     REL_NAME,
-    SECURITY_PROTOCOL_PORTS,
     SUBSTRATE,
     USER,
     DebugLevel,
@@ -176,19 +175,14 @@ class KafkaCharm(TypedCharmBase[CharmConfig]):
             return
 
         if self.config.expose_external:
-            # every unit attempts to create a bootstrap service
-            # if exists, will silently continue
-            bootstrap_service = self.k8s_manager.build_bootstrap_service(
-                svc_port=SECURITY_PROTOCOL_PORTS[self.state.security_protocol].external,
-            )
-            self.k8s_manager.apply_service(service=bootstrap_service)
-
-            # creating the per-broker listener services
             for auth_mechanism in self.config_manager.auth_mechanisms:
-                listener_service = self.k8s_manager.build_listener_service(
-                    svc_port=SECURITY_PROTOCOL_PORTS[auth_mechanism].external,
-                    service_name=self.state.unit_broker.k8s.build_service_name(auth_mechanism),
-                )
+                # every unit attempts to create a bootstrap service
+                # if exists, will silently continue
+                bootstrap_service = self.k8s_manager.build_bootstrap_service(auth_mechanism)
+                self.k8s_manager.apply_service(service=bootstrap_service)
+
+                # creating the per-broker listener services
+                listener_service = self.k8s_manager.build_listener_service(auth_mechanism)
                 self.k8s_manager.apply_service(service=listener_service)
 
         # required settings given zookeeper connection config has been created

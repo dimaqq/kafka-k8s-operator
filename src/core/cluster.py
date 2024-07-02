@@ -203,7 +203,16 @@ class ClusterState(Object):
     @property
     def bootstrap_servers_external(self) -> str:
         """Comma-delimited string of `bootstrap-server` for external access."""
-        return ",".join(sorted({broker.bootstrap_server_external for broker in self.brokers}))
+        # FIXME: will need updating when we support multiple concurrent security.protocols
+        # as this is what is sent across the relation, currently SASL only, inferred from self.security_protocol
+        return ",".join(
+            sorted(
+                {
+                    f"{broker.node_ip}:{self.unit_broker.k8s.get_bootstrap_nodeport(self.security_protocol)}"
+                    for broker in self.brokers
+                }
+            )
+        )
 
     @property
     def bootstrap_server(self) -> str:

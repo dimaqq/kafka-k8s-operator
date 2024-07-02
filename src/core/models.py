@@ -280,23 +280,6 @@ class KafkaBroker(RelationState):
         """
         return self.k8s.get_node_ip(node=self.node)
 
-    @property
-    def bootstrap_node_port(self) -> int:
-        """The port number for the bootstrap-server NodePort service.
-
-        K8s-only.
-        """
-        bootstrap_service = self.k8s.get_service(service_name=self.k8s.bootstrap_service_name)
-        return self.k8s.get_node_port(service=bootstrap_service)
-
-    @property
-    def bootstrap_server_external(self) -> str:
-        """The externally-accessible bootstrap-server address for the unit.
-
-        K8s-only.
-        """
-        return f"{self.node_ip}:{self.bootstrap_node_port}"
-
     @cached_property
     def listener_nodeports(self) -> dict[AuthMechanism, int]:
         """Dict of all available auth-mechanisms, and their corresponding NodePorts if available."""
