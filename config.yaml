@@ -94,3 +94,7 @@ options:
     description: "String to determine how to expose the Kafka cluster externally from the Kubernetes cluster. Possible values: 'nodeport', 'none'"
     type: string
     default: "nodeport"
+  nodeport-offset:
+    description: "Minimum NodePort number for charm bootstrap services. For example, if set to `31000`, port number `31001` will be for SASL_SSL, `31002` for SSL etc. The 5 values after the one provided must be available NodePorts within the Kubernetes cluster. If not set, will be randomly allocated. Possible values: `30000`-`32762`"
+    type: int
+    default: -1

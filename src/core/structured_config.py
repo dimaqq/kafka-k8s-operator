@@ -75,6 +75,7 @@ class CharmConfig(BaseConfigModel):
     certificate_extra_sans: str | None
     log_level: str
     expose_external: str | None
+    nodeport_offset: int | None
 
     @validator("*", pre=True)
     @classmethod
@@ -236,6 +237,24 @@ class CharmConfig(BaseConfigModel):
 
         if value == "none":
             return
+
+        return value
+
+    @validator("nodeport_offset")
+    @classmethod
+    def nodeport_offset_validator(cls, value: int, values) -> int | None:
+        """Check validity of `nodeport_offset` field."""
+        if SUBSTRATE == "vm" and value:
+            raise ValueError("Value not permitted on VM charm")
+
+        if value == -1:
+            return
+
+        if values["expose_external"] != "nodeport":
+            raise ValueError("Value not permitted if not `expose-external=nodeport`")
+
+        if value < 30000 or value > 32767:
+            raise ValueError("Value must be within range `30000`-`32767`")
 
         return value
 

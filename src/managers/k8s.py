@@ -115,7 +115,9 @@ class K8sManager:
 
         return self.get_node_port(service)
 
-    def build_bootstrap_service(self, auth_mechanism: AuthMechanism) -> Service:
+    def build_bootstrap_service(
+        self, auth_mechanism: AuthMechanism, nodeport_offset: int | None
+    ) -> Service:
         """Builds a ClusterIP service for initial client connection."""
         pod = self.get_pod(pod_name=self.pod_name)
         if not pod.metadata:
@@ -123,6 +125,11 @@ class K8sManager:
 
         service_name = self.build_bootstrap_service_name(auth_mechanism)
         svc_port = SECURITY_PROTOCOL_PORTS[auth_mechanism].external
+        nodeport = (
+            (list(SECURITY_PROTOCOL_PORTS.keys()).index(auth_mechanism) + nodeport_offset)
+            if nodeport_offset
+            else None
+        )
 
         return Service(
             metadata=ObjectMeta(
@@ -141,6 +148,7 @@ class K8sManager:
                         port=svc_port,
                         targetPort=svc_port,
                         name=f"{service_name}-port",
+                        nodePort=nodeport,
                     ),
                 ],
             ),

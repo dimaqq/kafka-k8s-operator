@@ -174,16 +174,8 @@ class KafkaCharm(TypedCharmBase[CharmConfig]):
             event.defer()
             return
 
-        if self.config.expose_external:
-            for auth_mechanism in self.config_manager.auth_mechanisms:
-                # every unit attempts to create a bootstrap service
-                # if exists, will silently continue
-                bootstrap_service = self.k8s_manager.build_bootstrap_service(auth_mechanism)
-                self.k8s_manager.apply_service(service=bootstrap_service)
-
-                # creating the per-broker listener services
-                listener_service = self.k8s_manager.build_listener_service(auth_mechanism)
-                self.k8s_manager.apply_service(service=listener_service)
+        # any external services must be created before setting of properties
+        self.update_external_services()
 
         # required settings given zookeeper connection config has been created
         self.config_manager.set_server_properties()
@@ -294,8 +286,9 @@ class KafkaCharm(TypedCharmBase[CharmConfig]):
         if zk_jaas_changed or properties_changed:
             self.on[f"{self.restart.name}"].acquire_lock.emit()
 
-        # update client_properties whenever possible
+        # update these whenever possible
         self.config_manager.set_client_properties()
+        self.update_external_services()
 
         # If Kafka is related to client charms, update their information.
         if self.model.relations.get(REL_NAME, None) and self.unit.is_leader():
@@ -380,6 +373,21 @@ class KafkaCharm(TypedCharmBase[CharmConfig]):
             return False
 
         return True
+
+    def update_external_services(self) -> None:
+        """Attempts to update any external Kubernetes services."""
+        if self.config.expose_external:
+            for auth_mechanism in self.config_manager.auth_mechanisms:
+                # every unit attempts to create a bootstrap service
+                # if exists, will silently continue
+                bootstrap_service = self.k8s_manager.build_bootstrap_service(
+                    auth_mechanism, nodeport_offset=self.config.nodeport_offset
+                )
+                self.k8s_manager.apply_service(service=bootstrap_service)
+
+                # creating the per-broker listener services
+                listener_service = self.k8s_manager.build_listener_service(auth_mechanism)
+                self.k8s_manager.apply_service(service=listener_service)
 
     def update_client_data(self) -> None:
         """Writes necessary relation data to all related client applications."""
