@@ -143,9 +143,6 @@ class KafkaCluster(RelationState):
 class KafkaBroker(RelationState):
     """State collection metadata for a unit."""
 
-    PORT_MINIMUM = 30000
-    KAFKA_PORT_OFFSET = 1000  # in future, we may have more than one exposed app, add offsets
-
     def __init__(
         self,
         relation: Relation | None,
