@@ -32,8 +32,6 @@ from literals import (
     Substrates,
 )
 
-# uncomfortable circular import necessary, as node information cannot live in Juju state
-
 
 class ClusterState(Object):
     """Collection of global cluster state for the Kafka services."""

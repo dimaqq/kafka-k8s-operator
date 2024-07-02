@@ -126,7 +126,6 @@ class KafkaCharm(TypedCharmBase[CharmConfig]):
         self.framework.observe(getattr(self.on, "secret_changed"), self._on_secret_changed)
 
         self.framework.observe(self.on[PEER].relation_changed, self._on_config_changed)
-        # self.framework.observe(self.on[PEER].relation_departed, self._on_peer_relation_departed)
 
         self.framework.observe(
             getattr(self.on, "data_storage_attached"), self._on_storage_attached
@@ -141,7 +140,6 @@ class KafkaCharm(TypedCharmBase[CharmConfig]):
         extra_opts = [
             f"-javaagent:{self.workload.paths.jmx_prometheus_javaagent}={JMX_EXPORTER_PORT}:{self.workload.paths.jmx_prometheus_config}",
             f"-Djava.security.auth.login.config={self.workload.paths.zk_jaas}",
-            "-Djavax.net.debug=ssl:handshake:verbose:session:keymanager:trustmanager",
         ]
         command = f"{self.workload.paths.binaries_path}/bin/kafka-server-start.sh {self.workload.paths.server_properties}"
 

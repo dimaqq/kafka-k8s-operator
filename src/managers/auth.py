@@ -165,8 +165,6 @@ class AuthManager:
             ]
             opts = []
 
-        logger.info(f"Running {command=}")
-
         self.workload.run_bin_command(bin_keyword="configs", bin_args=command, opts=opts)
 
     def delete_user(self, username: str) -> None:

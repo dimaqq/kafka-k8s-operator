@@ -124,7 +124,7 @@ class KafkaConfigManager:
         # Remapping to WARN that is generally used in Java applications based on log4j and logback.
         if self.config.log_level == LogLevel.WARNING.value:
             return "WARN"
-        return "DEBUG"
+        return self.config.log_level
 
     @property
     def jmx_opts(self) -> str:
@@ -184,7 +184,6 @@ class KafkaConfigManager:
         opts = [
             f"-Djava.security.auth.login.config={self.workload.paths.zk_jaas}",
             f"-Dcharmed.kafka.log.level={self.log_level}",
-            "-Djavax.net.debug=ssl:handshake:verbose:session:keymanager:trustmanager",
         ]
 
         return f"KAFKA_OPTS='{' '.join(opts)}'"

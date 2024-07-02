@@ -234,7 +234,7 @@ class CharmConfig(BaseConfigModel):
         if SUBSTRATE == "vm" and value:
             raise ValueError("Value not permitted on VM charm")
 
-        if value == 'none':
+        if value == "none":
             return
 
         return value

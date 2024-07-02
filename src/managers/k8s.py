@@ -6,7 +6,6 @@
 
 import logging
 from functools import cached_property
-from typing import TYPE_CHECKING
 
 from lightkube.core.client import Client
 from lightkube.core.exceptions import ApiError
@@ -22,9 +21,6 @@ logger = logging.getLogger(__name__)
 logging.getLogger("lightkube").disabled = True
 logging.getLogger("lightkube.core.client").disabled = True
 logging.getLogger("httpx").disabled = True
-
-if TYPE_CHECKING:
-    pass
 
 
 class K8sManager:
