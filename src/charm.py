@@ -14,7 +14,6 @@ from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
 from charms.rolling_ops.v0.rollingops import RollingOpsManager
 from ops import ActiveStatus, InstallEvent, pebble
 from ops.charm import (
-    # RelationDepartedEvent,
     SecretChangedEvent,
     StartEvent,
     StorageAttachedEvent,
