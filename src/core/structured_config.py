@@ -74,7 +74,7 @@ class CharmConfig(BaseConfigModel):
     profile: str
     certificate_extra_sans: str | None
     log_level: str
-    expose_nodeport: bool
+    expose_external: str | None
 
     @validator("*", pre=True)
     @classmethod
@@ -227,12 +227,15 @@ class CharmConfig(BaseConfigModel):
 
         return value
 
-    @validator("expose_nodeport")
+    @validator("expose_external")
     @classmethod
-    def expose_nodeport_k8s_only(cls, value: str) -> str | None:
-        """Check expose-nodeport config option is only used on Kubernetes charm."""
+    def expose_external_validator(cls, value: str) -> str | None:
+        """Check expose-external config option is only used on Kubernetes charm."""
         if SUBSTRATE == "vm" and value:
             raise ValueError("Value not permitted on VM charm")
+
+        if value == 'none':
+            return
 
         return value
 

@@ -217,7 +217,7 @@ class ClusterState(Object):
         if not self.peer_relation:
             return ""
 
-        if self.config.expose_nodeport:  # implicitly checks for k8s in structured_config
+        if self.config.expose_external:  # implicitly checks for k8s in structured_config
             return self.bootstrap_servers_external
 
         return ",".join(

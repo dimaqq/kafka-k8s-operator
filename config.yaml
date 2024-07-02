@@ -90,7 +90,7 @@ options:
     description: 'Level of logging for the different components operated by the charm. Possible values: ERROR, WARNING, INFO, DEBUG'
     type: string
     default: "INFO"
-  expose-nodeport:
-    description: Flag to confirm that the Kafka cluster should be accessible from outside the Kubernetes cluster via a per-broker nodePort
-    type: boolean
-    default: true
+  expose-external:
+    description: "String to determine how to expose the Kafka cluster externally from the Kubernetes cluster. Possible values: 'nodeport', 'none'"
+    type: string
+    default: "nodeport"

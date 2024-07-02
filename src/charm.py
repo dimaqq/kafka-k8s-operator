@@ -178,7 +178,7 @@ class KafkaCharm(TypedCharmBase[CharmConfig]):
             event.defer()
             return
 
-        if self.config.expose_nodeport:
+        if self.config.expose_external:
             # every unit attempts to create a bootstrap service
             # if exists, will silently continue
             bootstrap_service = self.k8s_manager.build_bootstrap_service(
